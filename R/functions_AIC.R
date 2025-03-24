@@ -22,10 +22,10 @@ plot_NDVI_Q_PSIbin_AIC <- function(data, save_aic_fig) {
   data$species <- factor(data$species, levels = species_order)
   
   # Define a palette for species (for consistency, if needed later)
-  cb_palette <- c("Oak"   = "#E69F00",   # Orange
-                  "Beech" = "#0072B2",   # Deep blue
-                  "Spruce"= "#009E73",   # Bluish-green
-                  "Pine"  = "#F0E442")   # Yellow
+  cb_palette <- c("Oak"   = "#E69F00",
+                  "Beech" = "#0072B2",
+                  "Spruce"= "#009E73",
+                  "Pine"  = "#F0E442")
   
   # Create a positive soil water potential variable (x = -bin_median)
   data <- data %>% mutate(x = -bin_median)
@@ -40,62 +40,87 @@ plot_NDVI_Q_PSIbin_AIC <- function(data, save_aic_fig) {
   # Initialize an empty list to store AIC results for each species and model
   aic_results <- list()
   
-  # Loop through each species to fit the models and compute AIC
+  # Loop through each species to fit the models and compute AIC and annotations
   for (sp in levels(data_clean$species)) {
     sp_data <- data_clean %>% filter(species == sp)
     
-    # Fit linear model: avg_value ~ x
+    # Fit models
     lm_linear <- lm(avg_value ~ x, data = sp_data)
     aic_linear <- AIC(lm_linear)
+    r2_linear <- summary(lm_linear)$r.squared
     
-    # Fit quadratic (poly2) model: avg_value ~ x + I(x^2)
     lm_poly2 <- lm(avg_value ~ x + I(x^2), data = sp_data)
     aic_poly2 <- AIC(lm_poly2)
+    r2_poly2 <- summary(lm_poly2)$r.squared
     
-    # Fit cubic (poly3) model: avg_value ~ x + I(x^2) + I(x^3)
     lm_poly3 <- lm(avg_value ~ x + I(x^2) + I(x^3), data = sp_data)
     aic_poly3 <- AIC(lm_poly3)
+    r2_poly3 <- summary(lm_poly3)$r.squared
     
-    # Fit exponential model: avg_value ~ a + b * exp(-c * x)
+    # Exponential model
     aic_exp <- NA
+    r2_exp <- NA
     nls_exp <- tryCatch({
       nls(avg_value ~ a + b * exp(-c * x), 
           data = sp_data, 
           start = start_list, 
           control = control_params)
-    }, error = function(e) {
-      NULL
-    })
+    }, error = function(e) NULL)
+    
     if (!is.null(nls_exp)) {
       aic_exp <- AIC(nls_exp)
+      res <- resid(nls_exp)
+      ss_res <- sum(res^2)
+      ss_tot <- sum((sp_data[[value_col]] - mean(sp_data[[value_col]]))^2)
+      r2_exp <- 1 - ss_res / ss_tot
     }
     
-    # Combine the results for this species
-    sp_results <- data.frame(species = sp,
-                             Model = c("Linear", "Poly2", "Poly3", "Exponential"),
-                             AIC = c(aic_linear, aic_poly2, aic_poly3, aic_exp))
+    # Create annotation labels: show only R²
+    label_fun <- function(r2) {
+      if (is.na(r2)) return("NA")
+      return(as.character(round(r2, 2)))
+    }
+    
+    labels <- c(
+      label_fun(r2_linear),
+      label_fun(r2_poly2),
+      label_fun(r2_poly3),
+      label_fun(r2_exp)
+    )
+    
+    # Combine AICs and labels
+    sp_results <- data.frame(
+      species = sp,
+      Model = c("Linear", "Poly2", "Poly3", "Exponential"),
+      AIC = c(aic_linear, aic_poly2, aic_poly3, aic_exp),
+      Label = labels
+    )
+    
+    # Set Y position to center of bar
+    sp_results$y_label_pos <- sp_results$AIC / 2
+    
     aic_results[[sp]] <- sp_results
   }
   
-  # Combine AIC results for all species into one data frame
+  # Combine results
   aic_df <- do.call(rbind, aic_results)
   aic_df$species <- factor(aic_df$species, levels = species_order)
   
-  # Print the AIC values for each case to the console
+  # Print AIC table
   print(aic_df)
   
-  # Define a distinct color palette for models
-  model_palette <- c("Linear"      = "#E69F00",   # Orange
-                     "Poly2"       = "#0072B2",   # Deep blue
-                     "Poly3"       = "#009E73",   # Bluish-green
-                     "Exponential" = "#F0E442")   # Yellow
+  # Model color palette
+  model_palette <- c("Linear"      = "#E69F00",
+                     "Poly2"       = "#0072B2",
+                     "Poly3"       = "#009E73",
+                     "Exponential" = "#F0E442")
   
-  # Create a grouped bar plot of AIC values per species for each model
+  # Plot
   p_aic <- ggplot(aic_df, aes(x = species, y = AIC, fill = Model)) +
     geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
-    geom_text(aes(label = round(AIC, 2)), 
-              position = position_dodge(width = 0.9), 
-              vjust = -0.5, size = 3) +
+    geom_text(aes(label = Label, y = y_label_pos),
+              position = position_dodge(width = 0.9),
+              vjust = 0.5, size = 3, color = "black") +
     labs(x = "Species", y = "AIC", 
          title = "Model Comparison via AIC for NDVI Quantiles - PSI") +
     scale_fill_manual(values = model_palette) +
@@ -119,7 +144,7 @@ plot_NDVI_Q_PSIbin_AIC <- function(data, save_aic_fig) {
   
   print(p_aic)
   
-  # Save the AIC comparison plot to file
+  # Save
   dir.create(dirname(save_aic_fig), recursive = TRUE, showWarnings = FALSE)
   ggsave(filename = save_aic_fig, plot = p_aic, width = 10, height = 8, dpi = 300)
 }

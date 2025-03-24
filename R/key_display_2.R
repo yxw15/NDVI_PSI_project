@@ -2,14 +2,18 @@ setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project"
 
 load("results/Data/All_Species_Quantiles_PSI_TDiff.RData")
 
+#### NDVI Q - PSIbin ####
 
-plot_NDVI_TDiff_poly_2_slope(all_results_df, 
-                             # "results/key_displays/NDVI_Q_TDiffbin_poly_2_coeff.png",
-                             "results/key_displays/NDVI_Q_TDiffbin_poly_2_slope.png")
+plot_NDVI_Q_PSIbin_exp_slope(all_results_df, 
+                             "results/key_displays/NDVI_Q_PSIbin_exp_coeff.png",
+                             "results/key_displays/NDVI_Q_PSIbin_exp_slope.png")
 
-plot_NDVI_TDiff_poly_3_slope(all_results_df, 
-                             #"results/key_displays/NDVI_Q_TDiffbin_coeff.png",
-                             "results/key_displays/NDVI_Q_TDiffbin_poly_3_slope.png")
+plot_NDVI_Q_PSIbin_linear_exp_slope(all_results_df, 
+                                    "results/key_displays/NDVI_Q_PSIbin_linear_exp_coeff.png",
+                                    "results/key_displays/NDVI_Q_PSIbin_linear_exp_slope.png")
+
+
+#### NDVI Q - TDiffbin ####
 
 plot_Quantiles_TDiff_exp_slope_coeff(all_results_df, 
                                      "results/key_displays/NDVI_Q_TDiffbin_exp_coeff.png",
@@ -18,6 +22,7 @@ plot_Quantiles_TDiff_exp_slope_coeff(all_results_df,
 plot_Quantiles_TDiff_poly_2_slope_coeff(all_results_df, 
                                         "results/key_displays/NDVI_Q_TDiffbin_poly_2_coeff.png",
                                         "results/key_displays/NDVI_Q_TDiffbin_poly_2_slope.png")
+#### TDiff - PSIbin ####
 
 plot_TDiff_PSIbin_slope(all_results_df, 
                         # "results/key_displays/TDiff_PSIbin_coeff.png",
@@ -26,11 +31,6 @@ plot_TDiff_PSIbin_slope(all_results_df,
 plot_TDiff_PSIbin_slope_each(all_results_df, 
                             "results/key_displays/TDiff_PSIbin_coeff_each.png",
                              "results/key_displays/TDiff_PSIbin_slope_each.png")
-
-plot_NDVI_PSIbin_slope(all_results_df, 
-                       "results/key_displays/NDVI_Q_PSIbin_coeff.png",
-                       "results/key_displays/NDVI_Q_PSIbin_slope.png")
-
 
 load("results/Data/All_Species_Proportions_PSI_TDiff.RData")
 
@@ -85,3 +85,5 @@ plot_TDiff_PSIbin_month_species_original(final_df,
                                          figure_output = "results/key_displays/TDiff_PSIbin_month_orig.png")
 
 
+#### AIC ####
+plot_NDVI_Q_PSIbin_AIC(all_results_df,  "results/key_displays/NDVI_Q_PSIbin_AIC.png")
