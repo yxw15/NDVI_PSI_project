@@ -24,13 +24,10 @@ plot_Quantiles_TDiff_poly_3_slope_coeff(all_results_df,
 
 #### TDiff - PSIbin ####
 
-plot_TDiff_PSIbin_slope(all_results_df, 
-                        # "results/key_displays/TDiff_PSIbin_coeff.png",
-                        "results/key_displays/TDiff_PSIbin_slope.png")
+plot_TDiff_PSIbin_poly_3_slope(all_results_df, 
+                               "results/key_displays/TDiff_PSIbin_coeff_each.png",
+                               "results/key_displays/TDiff_PSIbin_slope_each.png")
 
-plot_TDiff_PSIbin_slope_each(all_results_df, 
-                            "results/key_displays/TDiff_PSIbin_coeff_each.png",
-                             "results/key_displays/TDiff_PSIbin_slope_each.png")
 
 load("results/Data/All_Species_Proportions_PSI_TDiff.RData")
 
@@ -88,3 +85,4 @@ plot_TDiff_PSIbin_month_species_original(final_df,
 #### AIC ####
 plot_NDVI_Q_PSIbin_AIC(all_results_df,  "results/key_displays/NDVI_Q_PSIbin_AIC.png")
 plot_NDVI_Q_TDiffbin_AIC(all_results_df,  "results/key_displays/NDVI_Q_TDiffbin_AIC.png")
+plot_TDiff_PSIbin_AIC(all_results_df,  "results/key_displays/TDiff_PSIbin_AIC.png")

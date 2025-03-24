@@ -1088,35 +1088,36 @@ plot_TDiff_PSIbin_poly_3_slope <- function(data, coef_output, figure_output) {
   
   # Create a label: if p < 0.05 then "*" else just the p_value with 2 decimals.
   coeff_data <- coeff_data %>%
-    mutate(label_text = ifelse(p_value < 0.05, "*", sprintf("p=%.2f", p_value)))
+    mutate(label_text = ifelse(p_value < 0.05, "*", sprintf("%.2f", p_value)))
   
   # Ensure the species factor in coeff_data is set with the specified order.
   coeff_data$species <- factor(coeff_data$species, levels = species_levels)
   
   # Create the grouped bar plot with p-value labels centered in each bar.
-  plot_coeff <- ggplot(coeff_data, aes(x = term, y = value, fill = species)) +
+  plot_coeff <- ggplot(coeff_data, aes(x = species, y = value, fill = species)) +
     geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
     geom_text(aes(label = label_text, y = value/2), 
               color = "black", size = 3.5, 
               position = position_dodge(width = 0.8)) +
+    facet_wrap(~ term, scales = "free_y") +
     scale_fill_manual(values = cb_palette) +
     labs(title = "Coefficients of Transpiration Deficit (y) with Soil Water Potential (x)", 
          subtitle = expression(hat(Y) == a + b*x + c*x^2 + d*x^3),
          x = "Coefficient Term", 
          y = "Coefficient Value") +
     theme_minimal() +
-    theme(
-      plot.title = element_text(hjust = 0.5, face = "bold"),
-      plot.subtitle = element_text(hjust = 0.5),
-      axis.text.x = element_text(hjust = 1),
-      axis.title = element_text(face = "bold"),
-      axis.text = element_text(color = "black"),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.position = "top",
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank()
-    )
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          plot.background = element_rect(fill = "white", color = "white"),
+          panel.background = element_rect(fill = "white"),
+          legend.background = element_rect(fill = "white", color = "white"),
+          plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
+          plot.subtitle = element_text(hjust = 0.5, size = 14, face = "italic"),
+          axis.title = element_text(face = "bold"),
+          axis.text = element_text(color = "black"),
+          panel.grid = element_blank(),
+          legend.position = "top",
+          strip.background = element_rect(fill = "white", color = "black"),
+          strip.text = element_text(face = "bold", size = 12))
   
   print(plot_coeff)
   

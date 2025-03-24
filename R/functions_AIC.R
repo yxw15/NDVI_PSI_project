@@ -532,27 +532,31 @@ plot_TDiff_PSIbin_AIC <- function(data, save_aic_fig) {
   start_list <- list(a = 5, b = 3, c = 0.001)
   control_params <- nls.control(maxiter = 200, minFactor = 1e-4)
   
-  # Initialize an empty list to store AIC results for each species and model
+  # Initialize an empty list to store AIC and R² results for each species and model
   aic_results <- list()
   
-  # Loop through each species to fit models and compute AIC
+  # Loop through each species to fit models and compute AIC and R²
   for (sp in levels(data_clean$species)) {
     sp_data <- data_clean %>% filter(species == sp)
     
     # Fit a linear model: avg_transpiration_deficit ~ x
     lm_linear <- lm(avg_transpiration_deficit ~ x, data = sp_data)
     aic_linear <- AIC(lm_linear)
+    r2_linear <- summary(lm_linear)$r.squared
     
     # Fit a quadratic (Poly2) model: avg_transpiration_deficit ~ x + I(x^2)
     lm_poly2 <- lm(avg_transpiration_deficit ~ x + I(x^2), data = sp_data)
     aic_poly2 <- AIC(lm_poly2)
+    r2_poly2 <- summary(lm_poly2)$r.squared
     
     # Fit a cubic (Poly3) model: avg_transpiration_deficit ~ x + I(x^2) + I(x^3)
     lm_poly3 <- lm(avg_transpiration_deficit ~ x + I(x^2) + I(x^3), data = sp_data)
     aic_poly3 <- AIC(lm_poly3)
+    r2_poly3 <- summary(lm_poly3)$r.squared
     
     # Fit an exponential model: avg_transpiration_deficit ~ a + b * exp(-c * x)
     aic_exp <- NA
+    r2_exp <- NA
     nls_exp <- tryCatch({
       nls(avg_transpiration_deficit ~ a + b * exp(-c * x),
           data = sp_data,
@@ -563,16 +567,21 @@ plot_TDiff_PSIbin_AIC <- function(data, save_aic_fig) {
     })
     if (!is.null(nls_exp)) {
       aic_exp <- AIC(nls_exp)
+      # Compute R² for the exponential model
+      y <- sp_data$avg_transpiration_deficit
+      y_pred <- predict(nls_exp)
+      r2_exp <- 1 - sum((y - y_pred)^2) / sum((y - mean(y))^2)
     }
     
-    # Combine the results for this species
+    # Combine the results for this species into a data frame
     sp_results <- data.frame(species = sp,
                              Model = c("Linear", "Poly2", "Poly3", "Exponential"),
-                             AIC = c(aic_linear, aic_poly2, aic_poly3, aic_exp))
+                             AIC = c(aic_linear, aic_poly2, aic_poly3, aic_exp),
+                             R2 = c(r2_linear, r2_poly2, r2_poly3, r2_exp))
     aic_results[[sp]] <- sp_results
   }
   
-  # Combine AIC results for all species into one data frame
+  # Combine AIC and R² results for all species into one data frame
   aic_df <- do.call(rbind, aic_results)
   aic_df$species <- factor(aic_df$species, levels = species_order)
   
@@ -601,7 +610,12 @@ plot_TDiff_PSIbin_AIC <- function(data, save_aic_fig) {
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       legend.position = "top"
-    )
+    ) +
+    # Add R² labels at the center of each bar (using AIC/2 as the y position)
+    geom_text(aes(label = paste0(round(R2, 2)), y = AIC/2),
+              position = position_dodge(width = 0.8),
+              color = "black",
+              size = 3)
   
   print(p_aic)
   
@@ -609,4 +623,3 @@ plot_TDiff_PSIbin_AIC <- function(data, save_aic_fig) {
   dir.create(dirname(save_aic_fig), recursive = TRUE, showWarnings = FALSE)
   ggsave(filename = save_aic_fig, plot = p_aic, width = 10, height = 8, dpi = 300)
 }
-
