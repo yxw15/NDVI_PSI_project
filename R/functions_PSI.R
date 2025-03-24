@@ -132,10 +132,11 @@ NDVI_PSIbin <- function(df, bin_width = 100) {
   psi_max <- ceiling(max(df$soil_water_potential, na.rm = TRUE))
   bin_breaks <- seq(psi_min, psi_max, by = bin_width)
   
-  # Bin and compute stats
+  # Bin the soil water potential values
   df <- df %>%
     mutate(PSI_bin = cut(soil_water_potential, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
   
+  # Compute statistics for each species and bin, including filtering out bins with count < 2000
   meanNDVI_PSIbin_species <- df %>%
     group_by(species, PSI_bin) %>%
     summarise(
@@ -151,7 +152,7 @@ NDVI_PSIbin <- function(df, bin_width = 100) {
     ) %>%
     left_join(species_totals, by = "species") %>%
     mutate(percentage = round(count / total_pixels * 100, 2)) %>%
-    filter(percentage >= 0.1) %>%
+    filter(percentage >= 0.1, count >= 2000) %>%
     select(species, PSI_bin, bin_median, avg_value, count, total_pixels, percentage)
   
   return(meanNDVI_PSIbin_species)
@@ -193,8 +194,8 @@ TDiff_PSIbin <- function(df, bin_width = 100) {
     ) %>%
     left_join(species_totals, by = "species") %>%
     mutate(percentage = round(count / total_pixels * 100, 2)) %>%
-    filter(percentage >= 0.1) %>%
-    select(species, PSI_bin, bin_median, avg_transpiration_deficit)
+    filter(percentage > 0.1, count > 2000) %>%
+    select(species, PSI_bin, bin_median, avg_transpiration_deficit, count, total_pixels, percentage)
   
   return(meanTDiff_PSIbin_species)
 }

@@ -180,24 +180,28 @@ plot_NDVI_Q_TDiffbin_AIC <- function(data, save_aic_fig) {
   # Initialize an empty list to store AIC results for each species and model
   aic_results <- list()
   
-  # Loop through each species to fit the models and compute AIC
+  # Loop through each species to fit the models and compute AIC and R² values
   for (sp in levels(data_clean$species)) {
     sp_data <- data_clean %>% filter(species == sp)
     
     # Fit linear model: avg_value ~ x
     lm_linear <- lm(avg_value ~ x, data = sp_data)
     aic_linear <- AIC(lm_linear)
+    r2_linear <- summary(lm_linear)$r.squared
     
     # Fit quadratic (poly2) model: avg_value ~ x + I(x^2)
     lm_poly2 <- lm(avg_value ~ x + I(x^2), data = sp_data)
     aic_poly2 <- AIC(lm_poly2)
+    r2_poly2 <- summary(lm_poly2)$r.squared
     
     # Fit cubic (poly3) model: avg_value ~ x + I(x^2) + I(x^3)
     lm_poly3 <- lm(avg_value ~ x + I(x^2) + I(x^3), data = sp_data)
     aic_poly3 <- AIC(lm_poly3)
+    r2_poly3 <- summary(lm_poly3)$r.squared
     
     # Fit exponential model: avg_value ~ a + b * exp(-c * x)
     aic_exp <- NA
+    r2_exp <- NA
     nls_exp <- tryCatch({
       nls(avg_value ~ a + b * exp(-c * x), 
           data = sp_data, 
@@ -208,12 +212,34 @@ plot_NDVI_Q_TDiffbin_AIC <- function(data, save_aic_fig) {
     })
     if (!is.null(nls_exp)) {
       aic_exp <- AIC(nls_exp)
+      res <- resid(nls_exp)
+      ss_res <- sum(res^2)
+      ss_tot <- sum((sp_data[[value_col]] - mean(sp_data[[value_col]]))^2)
+      r2_exp <- 1 - ss_res / ss_tot
     }
     
-    # Combine the results for this species
-    sp_results <- data.frame(species = sp,
-                             Model = c("Linear", "Poly2", "Poly3", "Exponential"),
-                             AIC = c(aic_linear, aic_poly2, aic_poly3, aic_exp))
+    # Create annotation labels (rounded R² values)
+    label_fun <- function(r2) {
+      if (is.na(r2)) return("NA")
+      return(as.character(round(r2, 2)))
+    }
+    
+    labels <- c(
+      label_fun(r2_linear),
+      label_fun(r2_poly2),
+      label_fun(r2_poly3),
+      label_fun(r2_exp)
+    )
+    
+    # Combine results for this species
+    sp_results <- data.frame(
+      species = sp,
+      Model = c("Linear", "Poly2", "Poly3", "Exponential"),
+      AIC = c(aic_linear, aic_poly2, aic_poly3, aic_exp),
+      Label = labels
+    )
+    sp_results$y_label_pos <- sp_results$AIC / 2
+    
     aic_results[[sp]] <- sp_results
   }
   
@@ -227,9 +253,12 @@ plot_NDVI_Q_TDiffbin_AIC <- function(data, save_aic_fig) {
                      "Poly3"       = "#009E73",   # Bluish-green
                      "Exponential" = "#F0E442")   # Yellow
   
-  # Create a grouped bar plot of AIC values per species for each model
+  # Create a grouped bar plot of AIC values per species for each model with R² annotations
   p_aic <- ggplot(aic_df, aes(x = species, y = AIC, fill = Model)) +
     geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+    geom_text(aes(label = Label, y = y_label_pos),
+              position = position_dodge(width = 0.8),
+              vjust = 0.5, size = 3, color = "black") +
     labs(x = "Species", y = "AIC", 
          title = "Model Comparison via AIC for NDVI Quantiles - TDiff") +
     scale_fill_manual(values = model_palette) +
