@@ -2,6 +2,13 @@ setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project"
 
 load("results/Data/All_Species_Quantiles_PSI_TDiff.RData")
 
+#### Time series ####
+plot_time_series_NDVI_PSI_TDiff_avg(all_results_df,
+                                    "results/key_displays/time_series_Quantiles_PSI_TDiff.png")
+
+plot_time_series_NDVI_PSI_TDiff_species_avg(all_results_df,
+                                            "results/key_displays/time_series_Quantiles_PSI_TDiff_species.png")
+
 #### NDVI Q - PSIbin ####
 
 plot_NDVI_Q_PSIbin_exp_slope(all_results_df, 

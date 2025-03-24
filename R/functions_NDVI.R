@@ -1945,8 +1945,27 @@ plot_mean_box_NDVI_PSI_with_slope_bin <- function(data, save_path = NULL) {
 #--------------------------------------------------------------------------
 plot_time_series_NDVI_PSI_TDiff_avg <- function(df_all, plot_ts_path) {
   
+  library(tidyverse)
   library(ggplot2)
   library(patchwork)
+  
+  # Define the custom theme
+  custom_theme <- theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      axis.title = element_text(face = "bold"),
+      axis.text = element_text(color = "black"),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      plot.caption = element_text(face = "bold", size = 16, hjust = 0),
+      plot.caption.position = "plot"
+    )
   
   # Get averaged data (assumed to be used for both NDVI and PSI/TDiff)
   df_avg <- df_average_year(df_all)
@@ -1974,8 +1993,7 @@ plot_time_series_NDVI_PSI_TDiff_avg <- function(df_all, plot_ts_path) {
     labs(title = "NDVI over Years",
          x = "Year", 
          y = ndvi_label) +
-    theme_minimal() +
-    theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+    custom_theme
   
   # Panel (b): Soil Water Potential (PSI) Time Series over Years
   p2 <- ggplot(df_avg, aes(x = as.numeric(year), y = avg_psi)) +
@@ -1984,8 +2002,7 @@ plot_time_series_NDVI_PSI_TDiff_avg <- function(df_all, plot_ts_path) {
     labs(title = "Soil Water Potential over Years",
          x = "Year", 
          y = "Average PSI") +
-    theme_minimal() +
-    theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+    custom_theme
   
   # Panel (c): Transpiration Deficit (TDiff) Time Series over Years
   p3 <- ggplot(df_avg, aes(x = as.numeric(year), y = avg_tdiff)) +
@@ -1994,8 +2011,7 @@ plot_time_series_NDVI_PSI_TDiff_avg <- function(df_all, plot_ts_path) {
     labs(title = "Transpiration Deficit over Years",
          x = "Year", 
          y = "Average TDiff") +
-    theme_minimal() +
-    theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
+    custom_theme
   
   # Combine the three plots vertically (one row per panel)
   combined_ts <- p1 / p2 / p3
@@ -2007,7 +2023,7 @@ plot_time_series_NDVI_PSI_TDiff_avg <- function(df_all, plot_ts_path) {
   }
   
   # Save the time series plot
-  ggsave(filename = plot_ts_path, plot = combined_ts, width = 10, height = 15, dpi = 300)
+  ggsave(filename = plot_ts_path, plot = combined_ts, width = 10, height = 15, dpi = 300, device = "png")
 }
 
 #--------------------------------------------------------------------------
@@ -2084,73 +2100,94 @@ plot_correlation_NDVI_PSI_TDiff_corr <- function(df_all, plot_corr_path) {
   ggsave(filename = plot_corr_path, plot = combined_corr, width = 15, height = 7, dpi = 300)
 }
 
-plot_time_series_NDVI_PSI_TDiff_species_avg <- function(df_all, out_dir) {
+plot_time_series_NDVI_PSI_TDiff_species_avg <- function(df_all, output_path) {
   library(ggplot2)
   library(patchwork)
   
   # Get species-level averaged data
   df_species <- df_average_year_species(df_all)
-  unique_species <- unique(df_species$species)
   
-  # Ensure the output directory exists
-  if (!dir.exists(out_dir)) {
-    dir.create(out_dir, recursive = TRUE)
+  # Set species order and assign factor levels
+  species_order <- c("Oak", "Beech", "Spruce", "Pine")
+  df_species$species <- factor(df_species$species, levels = species_order)
+  
+  # Define the color palette for the species
+  cb_palette <- c("Oak"   = "#E69F00", 
+                  "Beech" = "#0072B2",
+                  "Spruce"= "#009E73", 
+                  "Pine"  = "#F0E442")
+  
+  # Determine the NDVI column and label
+  ndvi_column <- if ("avg_quantile" %in% names(df_species)) {
+    "avg_quantile"
+  } else if ("avg_proportion" %in% names(df_species)) {
+    "avg_proportion"
+  } else {
+    stop("Neither avg_quantile nor avg_proportion column found in species data.")
   }
   
-  # Loop through each species
-  for (sp in unique_species) {
-    # Subset data for the current species
-    df_sp <- subset(df_species, species == sp)
-    
-    # Determine the NDVI column and label
-    ndvi_column <- if ("avg_quantile" %in% names(df_sp)) {
-      "avg_quantile"
-    } else if ("avg_proportion" %in% names(df_sp)) {
-      "avg_proportion"
-    } else {
-      stop("Neither avg_quantile nor avg_proportion column found in species data.")
-    }
-    
-    ndvi_label <- if (ndvi_column == "avg_quantile") {
-      "Average NDVI (Quantiles)"
-    } else {
-      "Average NDVI (Proportions)"
-    }
-    
-    # Panel (a): NDVI Time Series over Years for species
-    p1 <- ggplot(df_sp, aes(x = as.numeric(year), y = .data[[ndvi_column]])) +
-      geom_point(color = "orange", size = 3, alpha = 0.7) +
-      geom_line(color = "orange") +
-      labs(title = paste("NDVI over Years for", sp),
-           x = "Year", y = ndvi_label) +
-      theme_minimal() +
-      theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
-    
-    # Panel (b): Soil Water Potential (PSI) Time Series over Years for species
-    p2 <- ggplot(df_sp, aes(x = as.numeric(year), y = avg_psi)) +
-      geom_point(color = "purple", size = 3, alpha = 0.7) +
-      geom_line(color = "purple") +
-      labs(title = paste("Soil Water Potential over Years for", sp),
-           x = "Year", y = "Average PSI") +
-      theme_minimal() +
-      theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
-    
-    # Panel (c): Transpiration Deficit (TDiff) Time Series over Years for species
-    p3 <- ggplot(df_sp, aes(x = as.numeric(year), y = avg_tdiff)) +
-      geom_point(color = "green4", size = 3, alpha = 0.7) +
-      geom_line(color = "green4") +
-      labs(title = paste("Transpiration Deficit over Years for", sp),
-           x = "Year", y = "Average TDiff") +
-      theme_minimal() +
-      theme(plot.title = element_text(hjust = 0.5, size = 16, face = "bold"))
-    
-    # Combine the three panels vertically
-    combined_ts <- p1 / p2 / p3
-    
-    # Save the time series plot for the current species
-    file_name <- file.path(out_dir, paste0("time_series_species_", sp, ".png"))
-    ggsave(filename = file_name, plot = combined_ts, width = 10, height = 15, dpi = 300)
+  ndvi_label <- if (ndvi_column == "avg_quantile") {
+    "Average NDVI (Quantiles)"
+  } else {
+    "Average NDVI (Proportions)"
   }
+  
+  # Define the custom theme
+  custom_theme <- theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      axis.title = element_text(face = "bold"),
+      axis.text = element_text(color = "black"),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      plot.caption = element_text(face = "bold", size = 16, hjust = 0),
+      plot.caption.position = "plot"
+    )
+  
+  # Panel (a): NDVI Time Series over Years (per species)
+  p1 <- ggplot(df_species, aes(x = as.numeric(year), y = .data[[ndvi_column]], color = species)) +
+    geom_point(size = 3, alpha = 0.7) +
+    geom_line() +
+    labs(title = "NDVI over Years",
+         x = "Year", 
+         y = ndvi_label,
+         color = "Species") +
+    scale_color_manual(values = cb_palette) +
+    custom_theme
+  
+  # Panel (b): Soil Water Potential (PSI) Time Series over Years (per species)
+  p2 <- ggplot(df_species, aes(x = as.numeric(year), y = avg_psi, color = species)) +
+    geom_point(size = 3, alpha = 0.7) +
+    geom_line() +
+    labs(title = "Soil Water Potential over Years",
+         x = "Year", 
+         y = "Average PSI",
+         color = "Species") +
+    scale_color_manual(values = cb_palette) +
+    custom_theme
+  
+  # Panel (c): Transpiration Deficit (TDiff) Time Series over Years (per species)
+  p3 <- ggplot(df_species, aes(x = as.numeric(year), y = avg_tdiff, color = species)) +
+    geom_point(size = 3, alpha = 0.7) +
+    geom_line() +
+    labs(title = "Transpiration Deficit over Years",
+         x = "Year", 
+         y = "Average TDiff",
+         color = "Species") +
+    scale_color_manual(values = cb_palette) +
+    custom_theme
+  
+  # Combine the three panels vertically into one figure
+  combined_ts <- p1 / p2 / p3
+  
+  # Save the combined figure to the specified output path
+  ggsave(filename = output_path, plot = combined_ts, width = 10, height = 15, dpi = 300)
 }
 
 plot_correlation_NDVI_PSI_TDiff_species_corr <- function(df_all, out_dir) {
