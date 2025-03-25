@@ -853,19 +853,21 @@ plot_TDiff_PSIbin_AIC <- function(data, save_aic_fig) {
   
   # Create a grouped bar plot of AIC values per species for each model
   p_aic <- ggplot(aic_df, aes(x = species, y = AIC, fill = Model)) +
-    geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
     labs(x = "Species", y = "AIC",
          title = "Model Comparison via AIC for TDiff PSI Data") +
     scale_fill_manual(values = model_palette) +
     theme_minimal() +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 16),
+      axis.text.y = element_text(size = 16),
+      axis.title = element_text(face = "bold", size = 20),
+      plot.title = element_text(hjust = 0.5, size = 24, face = "bold", color = "black"),
+      legend.text = element_text(size = 16),
+      legend.title = element_text(size = 18, face = "bold"),
       plot.background = element_rect(fill = "white", color = "white"),
       panel.background = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-      axis.title = element_text(face = "bold"),
-      axis.text = element_text(color = "black"),
       panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
@@ -873,9 +875,9 @@ plot_TDiff_PSIbin_AIC <- function(data, save_aic_fig) {
     ) +
     # Add R² labels at the center of each bar (using AIC/2 as the y position)
     geom_text(aes(label = paste0(round(R2, 2)), y = AIC/2),
-              position = position_dodge(width = 0.8),
+              position = position_dodge(width = 0.9),
               color = "black",
-              size = 3)
+              size = 5)
   
   print(p_aic)
   
@@ -883,3 +885,4 @@ plot_TDiff_PSIbin_AIC <- function(data, save_aic_fig) {
   dir.create(dirname(save_aic_fig), recursive = TRUE, showWarnings = FALSE)
   ggsave(filename = save_aic_fig, plot = p_aic, width = 10, height = 8, dpi = 300)
 }
+

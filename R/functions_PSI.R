@@ -940,30 +940,30 @@ plot_TDiff_PSIbin_poly_3_slope <- function(data, coef_output, figure_output) {
     annotate("text", x = min(TDiff_PSIbin_df$bin_median, na.rm = TRUE), 
              y = line_val, 
              label = paste0("mean: ", round(line_val, 2)),
-             hjust = -0.1, vjust = -0.3, fontface = "italic", size = 4) +
+             hjust = -0.1, vjust = -0.3, fontface = "italic", size = 5) +
     geom_hline(yintercept = line_median, linetype = "dashed", color = "black", linewidth = 1) +
     annotate("text", x = min(TDiff_PSIbin_df$bin_median, na.rm = TRUE), 
              y = line_median, 
              label = paste0("median: ", round(line_median, 2)),
-             hjust = -0.1, vjust = -0.3, fontface = "italic", size = 4) +
+             hjust = -0.1, vjust = -0.3, fontface = "italic", size = 5) +
     scale_color_manual(values = cb_palette) +
     labs(x = "Soil Water Potential (bin_median)",
          y = "Average Transpiration Deficit") +
     theme_minimal() +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 16),
+      axis.title = element_text(face = "bold", size = 20),
+      axis.text = element_text(color = "black", size = 16),
       plot.background = element_rect(fill = "white", color = "white"),
       panel.background = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-      axis.title = element_text(face = "bold"),
-      axis.text = element_text(color = "black"),
-      panel.border = element_rect(color = NA, fill = NA, linewidth = 0),
+      plot.title = element_text(hjust = 0.5, size = 24, face = "bold", color = "black"),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       legend.position = "top",
+      legend.text = element_text(size = 16),
       strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      strip.text = element_text(face = "bold", size = 12)
+      strip.text = element_text(face = "bold", size = 16)
     )
   
   ## Panel B: Bar Plot of x-values at Mean Transpiration Deficit
@@ -978,14 +978,16 @@ plot_TDiff_PSIbin_poly_3_slope <- function(data, coef_output, figure_output) {
     scale_fill_manual(values = cb_palette) +
     labs(x = "", y = "PSI at Mean TDiff") +
     theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1),
-          axis.title = element_text(face = "bold"),
-          axis.text = element_text(color = "black"),
-          plot.background = element_rect(fill = "white", color = "white"),
-          panel.background = element_rect(fill = "white"),
-          legend.position = "none",
-          panel.grid.major = element_blank(),
-          panel.grid.minor = element_blank())
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 16),
+      axis.title = element_text(face = "bold", size = 20),
+      axis.text = element_text(color = "black", size = 16),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.position = "none",
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
   
   ## Panel C: Bar Plot of Local Slopes at 30% of Maximum Transpiration Deficit
   
@@ -1013,30 +1015,31 @@ plot_TDiff_PSIbin_poly_3_slope <- function(data, coef_output, figure_output) {
     }) %>%
     ungroup()
   
-  # For Panel C, format p and R² with 2 decimals and always display "p = p_value, R² = r2".
+  # Format the label for Panel C: if p < 0.05, append an asterisk to the R².
   local_slope_data <- local_slope_data %>%
     mutate(slope_abs = abs(slope),
            label_text = ifelse(p_value < 0.05,
                                sprintf("%.2f*", r2),
                                sprintf("p = %.2f\nR² = %.2f", p_value, r2)))
   
-  
   p_bar <- ggplot(local_slope_data, aes(x = species, y = slope_abs, fill = species)) +
     geom_bar(stat = "identity", width = 0.7) +
     geom_errorbar(aes(ymin = slope_abs - slope_se, ymax = slope_abs + slope_se),
                   width = 0.2, color = "black") +
-    geom_text(aes(y = slope_abs/2, label = label_text), size = 4, color = "black") +
+    geom_text(aes(y = slope_abs/2, label = label_text), size = 5, color = "black") +
     scale_fill_manual(values = cb_palette) +
     labs(x = "", y = "Absolute Slope at Mean PSI") +
     theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1),
-          axis.title = element_text(face = "bold"),
-          axis.text = element_text(color = "black"),
-          plot.background = element_rect(fill = "white", color = "white"),
-          panel.background = element_rect(fill = "white"),
-          legend.position = "none",
-          panel.grid.major = element_blank(),
-          panel.grid.minor = element_blank())
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 16),
+      axis.title = element_text(face = "bold", size = 20),
+      axis.text = element_text(color = "black", size = 16),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.position = "none",
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
   
   ## Combine Panels: Panel A on the left, Panels B (top) and C (bottom) on the right.
   right_panel <- p_bar_x / p_bar
@@ -1087,18 +1090,17 @@ plot_TDiff_PSIbin_poly_3_slope <- function(data, coef_output, figure_output) {
   # Join the p-values with the coefficient data.
   coeff_data <- left_join(coeff_data, coeff_stats, by = c("species", "term"))
   
-  # Create a label: if p < 0.05 then "*" else just the p_value with 2 decimals.
+  # Create a label: if p < 0.05 then "*" else the p_value with 2 decimals.
   coeff_data <- coeff_data %>%
     mutate(label_text = ifelse(p_value < 0.05, "*", sprintf("%.2f", p_value)))
   
-  # Ensure the species factor in coeff_data is set with the specified order.
   coeff_data$species <- factor(coeff_data$species, levels = species_levels)
   
   # Create the grouped bar plot with p-value labels centered in each bar.
   plot_coeff <- ggplot(coeff_data, aes(x = species, y = value, fill = species)) +
     geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
     geom_text(aes(label = label_text, y = value/2), 
-              color = "black", size = 3.5, 
+              color = "black", size = 5, 
               position = position_dodge(width = 0.8)) +
     facet_wrap(~ term, scales = "free_y") +
     scale_fill_manual(values = cb_palette) +
@@ -1107,18 +1109,21 @@ plot_TDiff_PSIbin_poly_3_slope <- function(data, coef_output, figure_output) {
          x = "Coefficient Term", 
          y = "Coefficient Value") +
     theme_minimal() +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1),
-          plot.background = element_rect(fill = "white", color = "white"),
-          panel.background = element_rect(fill = "white"),
-          legend.background = element_rect(fill = "white", color = "white"),
-          plot.title = element_text(hjust = 0.5, size = 18, face = "bold"),
-          plot.subtitle = element_text(hjust = 0.5, size = 14, face = "italic"),
-          axis.title = element_text(face = "bold"),
-          axis.text = element_text(color = "black"),
-          panel.grid = element_blank(),
-          legend.position = "top",
-          strip.background = element_rect(fill = "white", color = "black"),
-          strip.text = element_text(face = "bold", size = 12))
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 16),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title = element_text(hjust = 0.5, size = 24, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, size = 18, face = "italic"),
+      axis.title = element_text(face = "bold", size = 20),
+      axis.text = element_text(color = "black", size = 16),
+      panel.grid = element_blank(),
+      legend.position = "top",
+      legend.text = element_text(size = 16),
+      strip.background = element_rect(fill = "white", color = "black"),
+      strip.text = element_text(face = "bold", size = 16)
+    )
   
   print(plot_coeff)
   
