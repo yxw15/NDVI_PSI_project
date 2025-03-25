@@ -115,7 +115,7 @@ plot_time_series <- function(psi_df, pixels) {
     theme_minimal()
 }
 
-NDVI_PSIbin <- function(df, bin_width = 100) {
+NDVI_PSIbin <- function(df, bin_width = 50) {
   
   library(dplyr)
   
@@ -151,14 +151,14 @@ NDVI_PSIbin <- function(df, bin_width = 100) {
       })
     ) %>%
     left_join(species_totals, by = "species") %>%
-    mutate(percentage = round(count / total_pixels * 100, 2)) %>%
-    filter(percentage >= 0.1, count >= 2000) %>%
+    mutate(percentage = count / total_pixels) %>%
+    filter(percentage >= 0.001) %>%
     select(species, PSI_bin, bin_median, avg_value, count, total_pixels, percentage)
   
   return(meanNDVI_PSIbin_species)
 }
 
-TDiff_PSIbin <- function(df, bin_width = 100) {
+TDiff_PSIbin <- function(df, bin_width = 50) {
   
   library(dplyr)
   
@@ -193,8 +193,8 @@ TDiff_PSIbin <- function(df, bin_width = 100) {
       })
     ) %>%
     left_join(species_totals, by = "species") %>%
-    mutate(percentage = round(count / total_pixels * 100, 2)) %>%
-    filter(percentage > 0.1, count > 2000) %>%
+    mutate(percentage = count / total_pixels) %>%
+    filter(percentage > 0.001) %>%
     select(species, PSI_bin, bin_median, avg_transpiration_deficit, count, total_pixels, percentage)
   
   return(meanTDiff_PSIbin_species)
@@ -427,7 +427,7 @@ plot_NDVI_Q_PSIbin_exp_slope <- function(data, save_coeff_fig, save_slope_fig) {
               position = position_dodge(width = 0.9)) +
     scale_fill_manual(values = cb_palette) +
     facet_wrap(~ Coefficient, scales = "free_y") +
-    labs(title = "Coefficients by Species for NDVI Quantiles",
+    labs(title = "Coefficients by Species for NDVI Quantiles with PSI",
          subtitle = expression(italic(NDVI) == a + b * e^(-c * italic(x))),
          x = "",
          y = "Coefficient Value") +
@@ -438,12 +438,13 @@ plot_NDVI_Q_PSIbin_exp_slope <- function(data, save_coeff_fig, save_slope_fig) {
       legend.background = element_rect(fill = "white", color = "white"),
       plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
       plot.subtitle = element_text(hjust = 0.5),
-      axis.title = element_text(face = "bold"),
-      axis.text = element_text(color = "black"),
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
       panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       legend.position = "top",
+      legend.text = element_text(size = 14),
       strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
       strip.text = element_text(face = "bold", size = 12)
     )
