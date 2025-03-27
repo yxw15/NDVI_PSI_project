@@ -40,9 +40,13 @@ plot_Quantiles_TDiff_poly_3_slope_coeff(all_results_df,
 
 #### TDiff - PSIbin ####
 
+plot_TDiff_PSIbin_poly_2_slope(all_results_df, 
+                               "results/key_displays/TDiff_PSIbin_poly_2_coeff_each.png",
+                               "results/key_displays/TDiff_PSIbin_poly_2_slope_each.png")
+
 plot_TDiff_PSIbin_poly_3_slope(all_results_df, 
-                               "results/key_displays/TDiff_PSIbin_coeff_each.png",
-                               "results/key_displays/TDiff_PSIbin_slope_each.png")
+                               "results/key_displays/TDiff_PSIbin_poly_3_coeff_each.png",
+                               "results/key_displays/TDiff_PSIbin_poly_3_slope_each.png")
 
 
 load("results/Data/All_Species_Proportions_PSI_TDiff.RData")
