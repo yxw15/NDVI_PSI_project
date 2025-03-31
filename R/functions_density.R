@@ -1,4 +1,7 @@
 plot_density_Quantiles_PSI_linear <- function(data, swp_bin_width = 50, output_path) {
+  library(dplyr)
+  library(tidyr)      # Added to provide drop_na() function
+  library(ggplot2)
   
   # Define species order
   species_order <- c("Oak", "Beech", "Spruce", "Pine")
@@ -11,12 +14,16 @@ plot_density_Quantiles_PSI_linear <- function(data, swp_bin_width = 50, output_p
   # Bin Quantiles (1-22) and Soil Water Potential (using swp_bin_width)
   species_binned <- species_df %>%
     mutate(
-      quantile_bin = cut(Quantiles, breaks = seq(0, 22, 1), include.lowest = TRUE, right = FALSE),
+      quantile_bin = cut(Quantiles, 
+                         breaks = seq(0, 22, 1), 
+                         include.lowest = TRUE, 
+                         right = FALSE),
       swp_bin = cut(soil_water_potential, 
                     breaks = seq(floor(min(soil_water_potential) / swp_bin_width) * swp_bin_width,
                                  ceiling(max(soil_water_potential) / swp_bin_width) * swp_bin_width,
                                  swp_bin_width),
-                    include.lowest = TRUE, right = FALSE)
+                    include.lowest = TRUE, 
+                    right = FALSE)
     ) %>%
     drop_na(quantile_bin, swp_bin)
   
@@ -32,19 +39,41 @@ plot_density_Quantiles_PSI_linear <- function(data, swp_bin_width = 50, output_p
   species_density <- species_binned %>%
     left_join(density_df, by = c("species", "quantile_bin", "swp_bin"))
   
+  # Calculate maximum density and create five equally spaced breaks for the legend
+  max_density <- ceiling(max(species_density$density_percent, na.rm = TRUE))
+  density_breaks <- seq(0, max_density, length.out = 5)
+  
   # Create the plot with fitted linear regression lines and facets for each species
   p <- ggplot(species_density, aes(x = soil_water_potential, y = Quantiles, color = density_percent)) +
     geom_point(size = 2.5, alpha = 0.9) +
-    geom_smooth(method = "lm", se = TRUE, color = "red", linewidth = 1) +
-    scale_color_viridis_c(name = "Density (%)", option = "plasma", direction = -1,
-                          breaks = seq(0, ceiling(max(species_density$density_percent, na.rm = TRUE)), by = 1)) +
+    geom_smooth(method = "lm", se = TRUE, color = "black", linewidth = 1) +
+    scale_color_viridis_c(
+      name = "Density (%)", 
+      option = "inferno", 
+      direction = -1, 
+      trans = "sqrt",
+      breaks = density_breaks
+    ) +
     labs(
       title = "Quantiles vs. Soil Water Potential with Density by Species",
       x = "Soil Water Potential",
       y = "Quantiles"
     ) +
     facet_wrap(~species, ncol = 2) +
-    theme_minimal()
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(hjust = 1),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      axis.title = element_text(face = "bold"),
+      axis.text = element_text(color = "black"),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top"
+    )
   
   # Print and save the plot to the specified output path
   print(p)
@@ -52,6 +81,10 @@ plot_density_Quantiles_PSI_linear <- function(data, swp_bin_width = 50, output_p
 }
 
 plot_density_Quantiles_TDiff_linear <- function(data, tdiff_bin_width = 3, output_path) {
+  
+  library(dplyr)
+  library(tidyr)      # Added to provide drop_na() function
+  library(ggplot2)
   
   # Define species order
   species_order <- c("Oak", "Beech", "Spruce", "Pine")
@@ -86,19 +119,45 @@ plot_density_Quantiles_TDiff_linear <- function(data, tdiff_bin_width = 3, outpu
   species_density <- species_binned %>%
     left_join(density_df, by = c("species", "quantile_bin", "tdiff_bin"))
   
+  # Calculate maximum density and create five equally spaced breaks for the legend
+  max_density <- ceiling(max(species_density$density_percent, na.rm = TRUE))
+  density_breaks <- seq(0, max_density, length.out = 5)
+  
   # Create the plot with fitted linear regression lines and facets for each species
   p <- ggplot(species_density, aes(x = transpiration_deficit, y = Quantiles, color = density_percent)) +
     geom_point(size = 2.5, alpha = 0.9) +
-    geom_smooth(method = "lm", se = TRUE, color = "red", linewidth = 1) +
-    scale_color_viridis_c(name = "Density (%)", option = "plasma", direction = -1,
-                          breaks = seq(0, ceiling(max(species_density$density_percent, na.rm = TRUE)), by = 1)) +
+    geom_smooth(method = "lm", se = TRUE, color = "black", linewidth = 1) +
+    scale_color_viridis_c(
+      name = "Density (%)", 
+      option = "inferno", 
+      direction = -1, 
+      trans = "sqrt",
+      breaks = density_breaks
+    ) +
     labs(
       title = "Quantiles vs. Transpiration Deficit with Density by Species",
       x = "Transpiration Deficit",
       y = "Quantiles"
     ) +
     facet_wrap(~species, ncol = 2) +
-    theme_minimal()
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(hjust = 1),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.subtitle = element_text(hjust = 0.5),
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      legend.text = element_text(size = 14),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.text = element_text(face = "bold", size = 12)
+    )
   
   # Print and save the plot to the specified output path
   print(p)
@@ -106,6 +165,10 @@ plot_density_Quantiles_TDiff_linear <- function(data, tdiff_bin_width = 3, outpu
 }
 
 plot_density_TDiff_PSI_linear <- function(data, swp_bin_width = 50, tdiff_bin_width = 3, output_path) {
+  
+  library(dplyr)
+  library(tidyr)      # Added to provide drop_na() function
+  library(ggplot2)
   
   # Define species order
   species_order <- c("Oak", "Beech", "Spruce", "Pine")
@@ -144,19 +207,45 @@ plot_density_TDiff_PSI_linear <- function(data, swp_bin_width = 50, tdiff_bin_wi
   species_density <- species_binned %>%
     left_join(density_df, by = c("species", "swp_bin", "tdiff_bin"))
   
+  # Calculate maximum density and create five equally spaced breaks for the legend
+  max_density <- ceiling(max(species_density$density_percent, na.rm = TRUE))
+  density_breaks <- seq(0, max_density, length.out = 5)
+  
   # Create the plot with fitted regression lines and facets for each species
   p <- ggplot(species_density, aes(x = soil_water_potential, y = transpiration_deficit, color = density_percent)) +
     geom_point(size = 2.5, alpha = 0.9) +
-    geom_smooth(method = "lm", se = TRUE, color = "red", linewidth = 1) +
-    scale_color_viridis_c(name = "Density (%)", option = "plasma", direction = -1,
-                          breaks = seq(0, ceiling(max(species_density$density_percent, na.rm = TRUE)), by = 1)) +
+    geom_smooth(method = "lm", se = TRUE, color = "black", linewidth = 1) +
+    scale_color_viridis_c(
+      name = "Density (%)", 
+      option = "inferno", 
+      direction = -1, 
+      trans = "sqrt",
+      breaks = density_breaks
+    ) +
     labs(
       title = "Transpiration Deficit vs. Soil Water Potential with Density by Species",
       x = "Soil Water Potential",
       y = "Transpiration Deficit"
     ) +
     facet_wrap(~species, ncol = 2) +
-    theme_minimal()
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(hjust = 1),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.subtitle = element_text(hjust = 0.5),
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      legend.text = element_text(size = 14),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.text = element_text(face = "bold", size = 12)
+    )
   
   # Print and save the plot to the specified output path
   print(p)
@@ -167,6 +256,8 @@ plot_density_Quantiles_PSI_raster <- function(data, swp_bin_width = 50, output_p
   # Load required packages
   library(dplyr)
   library(terra)
+  library(tidyr)
+  library(viridis)
   
   # Define species order
   species_order <- c("Oak", "Beech", "Spruce", "Pine")
@@ -175,6 +266,10 @@ plot_density_Quantiles_PSI_raster <- function(data, swp_bin_width = 50, output_p
   species_df <- data %>% 
     filter(species %in% species_order) %>%
     mutate(species = factor(species, levels = species_order))
+  
+  # If soil water potential values are negative and you want a positive scale,
+  # uncomment the following line:
+  # species_df <- species_df %>% mutate(soil_water_potential = abs(soil_water_potential))
   
   # Bin Quantiles (1-22) and Soil Water Potential using swp_bin_width
   species_binned <- species_df %>%
@@ -243,8 +338,8 @@ plot_density_Quantiles_PSI_raster <- function(data, swp_bin_width = 50, output_p
     raster_list[[sp]] <- rast_obj
   }
   
-  # Create a common color palette
-  col_pal <- colorRampPalette(c("grey", "yellow", "red"))
+  # Create a common color palette using the inferno palette from viridis for higher contrast
+  col_pal <- inferno(100)
   
   # Open a graphics device to save the multi-panel plot (PNG example)
   png(filename = output_path, width = 12, height = 8, units = "in", res = 300)
@@ -252,10 +347,13 @@ plot_density_Quantiles_PSI_raster <- function(data, swp_bin_width = 50, output_p
   # Set up a 2 x 2 plotting layout
   par(mfrow = c(2, 2), mar = c(4, 4, 3, 1))
   
+  # Enforce a square (1:1) aspect ratio for each panel so that the cell proportions are similar
+  par(asp = 1)
+  
   # Loop over species and plot each raster
   for (sp in species_order) {
     plot(raster_list[[sp]], 
-         col = col_pal(100),
+         col = col_pal,
          main = paste("Species:", sp),
          xlab = "Soil Water Potential", 
          ylab = "Quantiles")
@@ -369,6 +467,7 @@ plot_density_TDiff_PSI_raster <- function(data, swp_bin_width = 50, tdiff_bin_wi
   # Load required packages
   library(dplyr)
   library(terra)
+  library(tidyr)
   
   # Define species order
   species_order <- c("Oak", "Beech", "Spruce", "Pine")
@@ -408,6 +507,9 @@ plot_density_TDiff_PSI_raster <- function(data, swp_bin_width = 50, tdiff_bin_wi
                       ceiling(max(species_df$transpiration_deficit) / tdiff_bin_width) * tdiff_bin_width,
                       tdiff_bin_width)
   
+  # Determine the cell size based on the PSI (swp) bins so that each cell is square.
+  cell_size <- (swp_breaks[length(swp_breaks)] - swp_breaks[1]) / n_swp
+  
   # Create a list to store the raster for each species
   raster_list <- list()
   
@@ -436,23 +538,23 @@ plot_density_TDiff_PSI_raster <- function(data, swp_bin_width = 50, tdiff_bin_wi
       if (sum(x) == 0) rep(0, length(x)) else x / sum(x)
     })
     
-    # Convert the normalized matrix to a raster using terra::rast
+    # Convert the normalized matrix to a raster
     rast_obj <- rast(bin_rast_norm)
     
     # Set spatial extent:
-    #   x-axis: from the first to the last soil water potential break,
-    #   y-axis: from the first to the last transpiration deficit break.
+    #   x-axis: from the first to the last swp break,
+    #   y-axis: from the first tdiff break up to a height of cell_size * n_tdiff (to enforce square cells)
     ext(rast_obj) <- c(swp_breaks[1], swp_breaks[length(swp_breaks)],
-                       tdiff_breaks[1], tdiff_breaks[length(tdiff_breaks)])
+                       tdiff_breaks[1], tdiff_breaks[1] + cell_size * n_tdiff)
     
     # Store the raster with the species name as key
     raster_list[[sp]] <- rast_obj
   }
   
-  # Create a common color palette: grey → yellow → red
-  col_pal <- colorRampPalette(c("grey", "yellow", "red"))
+  # Create a common color palette: from white to yellow to orange to red
+  col_pal <- colorRampPalette(c("white", "yellow", "orange", "red"))
   
-  # Open a graphics device (here, a PNG file) to save the multi-panel plot
+  # Open a graphics device (PNG) to save the multi-panel plot
   png(filename = output_path, width = 12, height = 8, units = "in", res = 300)
   
   # Set up a 2 x 2 plotting layout (one panel per species)

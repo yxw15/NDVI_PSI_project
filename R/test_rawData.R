@@ -350,11 +350,11 @@ plot_orig_quantiles_PSI_linear_slope <- function(data, save_coeff_fig, save_slop
   x_scale <- scale_x_continuous(trans = "reverse", labels = function(x) -x)
   
   p_combined <- ggplot() +
-    geom_point(data = data_valid, aes(x = x, y = Quantiles, color = species)) +
+    # geom_point(data = data_valid, aes(x = x, y = Quantiles, color = species)) +
     geom_line(data = pred_all, aes(x = x, y = pred, color = species), linewidth = 1) +
     geom_hline(yintercept = threshold, linetype = "dashed", color = "black", linewidth = 1) +
     annotate("text", x = 2000, y = threshold, label = "median", 
-             hjust = -0.1, vjust = -0.3, fontface = "italic", size = 4) +
+             hjust = -1, vjust = -0.3, fontface = "italic", size = 4) +
     scale_color_manual(values = cb_palette) +
     x_scale +
     labs(x = "Soil Water Potential", y = "NDVI Quantiles") +
@@ -928,11 +928,11 @@ plot_orig_quantiles_TDiff_linear_slope_coeff <- function(data, coef_fig, output_
   
   # Reverse x-axis if desired (here we leave x as transpiration deficit; adjust if needed)
   p_combined <- ggplot() +
-    geom_point(data = data_clean, aes(x = x, y = Quantiles, color = species)) +
+    # geom_point(data = data_clean, aes(x = x, y = Quantiles, color = species)) +
     geom_line(data = pred_all, aes(x = x, y = pred, color = species), size = 1) +
     geom_hline(yintercept = threshold, linetype = "dashed", color = "black", size = 1) +
     annotate("text", x = min(data_clean$x, na.rm = TRUE), y = threshold,
-             label = "median", hjust = -0.1, vjust = -0.3, fontface = "italic", size = 4) +
+             label = "median", hjust = -3, vjust = -0.3, fontface = "italic", size = 4) +
     scale_color_manual(values = cb_palette) +
     labs(x = "Transpiration Deficit", y = "NDVI Quantiles") +
     theme_minimal() +
@@ -1331,14 +1331,14 @@ plot_orig_TDiff_PSI_linear_slope <- function(data, coef_output, figure_output) {
   
   # Create the mixed-effects model plot.
   plot_mixed <- ggplot(df, aes(x = bin_median, y = avg_transpiration_deficit, color = species)) +
-    geom_point() +
-    geom_line(data = pred_data, aes(x = bin_median, y = predicted, color = species), size = 1) +
-    geom_hline(yintercept = line_val, linetype = "dashed", color = "black", size = 1) +
+    #geom_point() +
+    geom_line(data = pred_data, aes(x = bin_median, y = predicted, color = species), linewidth = 1) +
+    geom_hline(yintercept = line_val, linetype = "dashed", color = "black", linewidth = 1) +
     annotate("text", x = min(df$bin_median, na.rm = TRUE), 
              y = line_val, 
              label = paste0("mean: ", round(line_val, 2)),
              hjust = -0.1, vjust = -0.3, fontface = "italic", size = 5) +
-    geom_hline(yintercept = line_median, linetype = "dashed", color = "black", size = 1) +
+    geom_hline(yintercept = line_median, linetype = "dashed", color = "black", linewidth = 1) +
     annotate("text", x = min(df$bin_median, na.rm = TRUE), 
              y = line_median, 
              label = paste0("median: ", round(line_median, 2)),
@@ -1388,23 +1388,32 @@ plot_orig_TDiff_PSI_linear_slope <- function(data, coef_output, figure_output) {
   
   ## Panel C: Bar Plot of Slopes from Species–Specific Linear Models
   # For each species, fit an ordinary linear model and extract the slope, its standard error, p–value, and R².
+  # Additionally, compute the x value at which the predicted value equals line_val based on the model,
+  # verifying that the slope (slope = (line_val - intercept) / x_at_mean) is indeed the model's slope.
   slope_stats <- df %>%
     group_by(species) %>%
     do({
       mod <- lm(avg_transpiration_deficit ~ bin_median, data = .)
       summ <- summary(mod)$coefficients
-      data.frame(slope = summ["bin_median", "Estimate"],
+      intercept <- summ["(Intercept)", "Estimate"]
+      slope <- summ["bin_median", "Estimate"]
+      # Compute x_at_mean for this species based on the regression line:
+      # line_val = intercept + slope * x_at_mean  =>  x_at_mean = (line_val - intercept) / slope
+      x_at_mean_model <- (line_val - intercept) / slope
+      data.frame(slope = slope,
                  slope_se = summ["bin_median", "Std. Error"],
                  p_val = summ["bin_median", "Pr(>|t|)"],
-                 r2 = summary(mod)$r.squared)
+                 r2 = summary(mod)$r.squared,
+                 x_at_mean_model = x_at_mean_model)
     }) %>% ungroup()
+  
+  # For plotting, we use the absolute value of the slope. Note that because the model is linear,
+  # the slope at y = line_val is the same as the estimated regression slope.
   slope_stats <- slope_stats %>% 
     mutate(slope_abs = abs(slope),
            label_text = ifelse(p_val < 0.05,
                                sprintf("%.2f*", r2),
                                sprintf("p = %.2f\nR² = %.2f", p_val, r2)))
-  # Ensure species order is consistent.
-  slope_stats$species <- factor(unique(df$species), levels = species_levels)
   
   p_slope <- ggplot(slope_stats, aes(x = species, y = slope_abs, fill = species)) +
     geom_bar(stat = "identity", width = 0.7) +
