@@ -14,10 +14,10 @@ source("R/functions_TDiff.R")
 # Define input files and parameters
 input_file <- "../TreeSpeciesGermany/TreeSpeciesMODIS.tif"
 output_folder <- "results/Species_Maps"
-NDVI <- "../WZMAllDOYs/Proportions_209.nc"
+NDVI <- "../WZMAllDOYs/Quantiles_209.nc"
 start_date <- "2003-01-01"
 month_day <- "07-28"
-depth <- 50
+depth <- 100
 years <- 2003:2024
 
 # Helper function to create directories if missing
@@ -34,25 +34,25 @@ species_list <- list(
     psi_nc = "../Allan_Yixuan/PSImean_AMJJA_8days_Bu_bfv_20032024_compressed.nc",
     tdiff_nc = "../Allan_Yixuan/TDiffsum_AMJJA_8days_Bu_bfv20032024_compressed.nc",
     mask = "results/Species_Maps/Beech_mask.tif",
-    output_dir = "results/Beech"
+    output_dir = "results/Beech_100"
   ),
   Oak = list(
     psi_nc = "../Allan_Yixuan/PSImean_AMJJA_8days_Ei_bfv_20032024_compressed.nc",
     tdiff_nc = "../Allan_Yixuan/TDiffsum_AMJJA_8days_Ei_bfv20032024_compressed.nc",
     mask = "results/Species_Maps/Oak_mask.tif",
-    output_dir = "results/Oak"
+    output_dir = "results/Oak_100"
   ),
   Spruce = list(
     psi_nc = "../Allan_Yixuan/PSImean_AMJJA_8days_Fi_bfv_20032024_compressed.nc",
     tdiff_nc = "../Allan_Yixuan/TDiffsum_AMJJA_8days_Fi_bfv20032024_compressed.nc",
     mask = "results/Species_Maps/Spruce_mask.tif",
-    output_dir = "results/Spruce"
+    output_dir = "results/Spruce_100"
   ),
   Pine = list(
     psi_nc = "../Allan_Yixuan/PSImean_AMJJA_8days_Ki_bfv_20032024_compressed.nc",
     tdiff_nc = "../Allan_Yixuan/TDiffsum_AMJJA_8days_Ki_bfv20032024_compressed.nc",
     mask = "results/Species_Maps/Pine_mask.tif",
-    output_dir = "results/Pine"
+    output_dir = "results/Pine_100"
   )
 )
 
@@ -78,7 +78,7 @@ process_species <- function(species_name, paths) {
   species_df <- bind_rows(species_results)
   
   # Save data
-  save_path <- file.path(paths$output_dir, "Proportions_PSI_TDiff_df.RData")
+  save_path <- file.path(paths$output_dir, "Quantiles_PSI_TDiff_df_100.RData")
   save(species_df, file = save_path)
   cat(paste("Saved data for", species_name, "to", save_path, "\n"))
   
@@ -96,59 +96,8 @@ all_results_df <- rbind(Oak, Beech, Spruce, Pine)
 output_data_dir <- "results/Data"
 ensure_directory(output_data_dir)
 
-final_results_path <- file.path(output_data_dir, "All_Species_Proportions_PSI_TDiff.RData")
+final_results_path <- file.path(output_data_dir, "All_Species_Quantiles_PSI_TDiff_100.RData")
 save(all_results_df, file = final_results_path)
 cat("Final dataset saved.\n")
 
-# Generate plots if data exists
-if (nrow(all_results_df) > 0) {
-  filtered_data <- all_results_df %>% filter(species %in% c("Beech", "Oak", "Spruce", "Pine"))
-  # filtered_drought_years <- all_results_df %>% filter(year %in% c(2003, 2015, 2018, 2019, 2020, 2022))
-  
-  # Save plots
-  plot_functions <- list(
-    # plot_series_NDVI_PSI_same_month,
-    # plot_species_NDVI_PSI,
-    # plot_correlation_NDVI_PSI_avg,
-    # plot_correlation_NDVI_PSI_species,
-    # plot_mean_box_NDVI_PSI_with_slope,
-    # plot_mean_box_NDVI_PSI_with_slope_bin,
-    # plot_mean_box_TDiff_PSI_with_slope,
-    # plot_mean_box_TDiff_PSI_with_slope_bin,
-    # plot_box_NDVI_PSI,
-    # plot_box_TDiff_PSI, 
-    # plot_box_merge_TDiff_PSI,
-    # plot_mean_box_TDiff_PSI,
-    # plot_NDVI_PDM_PSIbin_slope,
-    # plot_TDiff_PSIbin_slope, 
-    plot_NDVI_PDM_TDiff_slope
-  )
-  
-  plot_paths <- c(
-    # "Proportions_PSI_same_month.png",
-    # "Proportions_PSI_time_series_species.png",
-    # "Proportions_PSI_correlation_avg.png",
-    # "Proportions_PSI_correlation_species.png",
-    # "mean_box_Proportions_PSI_with_slope.png",
-    # "mean_box_Proportions_PSI_with_slope_bin.png",
-    # "box_Proportion_PSI.png",
-    # "mean_box_TDiff_PSI_with_slope.png",
-    # "mean_box_TDiff_PSI_with_slope_bin.png",
-    # "mean_box_TDiff_PSI.png",
-    # "mean_box_merge_TDiff_PSI.png",
-    # "mean_TDiff_PSI.png",
-    # "Proportions_PSI_non_linear.png",
-    # TDiff_PSIbin_non_linear.png",
-    "Proportions_TDiff_non_linear.png"
-  )
-  
-  for (i in seq_along(plot_functions)) {
-    plot_functions[[i]](all_results_df, paste0("results/Figures/", plot_paths[i]))
-  }
-  
-  cat("All plots generated successfully.\n")
-} else {
-  cat("No data available for plotting.\n")
-}
-
-cat("All analyses completed successfully.\n")
+cat("All data preprocessing completed successfully.\n")

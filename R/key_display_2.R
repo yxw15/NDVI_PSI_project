@@ -9,11 +9,16 @@ plot_time_series_NDVI_PSI_TDiff_avg(all_results_df,
 plot_time_series_NDVI_PSI_TDiff_species_avg(all_results_df,
                                             "results/key_displays/time_series_Quantiles_PSI_TDiff_species.png")
 
+
 #### NDVI Q - PSIbin ####
 
 plot_NDVI_Q_PSIbin_exp_slope(all_results_df, 
                              "results/key_displays/NDVI_Q_PSIbin_exp_coeff.png",
                              "results/key_displays/NDVI_Q_PSIbin_exp_slope.png")
+
+plot_NDVI_Q_PSIbin_exp_slope_negPSI(all_results_df, 
+                                    "results/key_displays/NDVI_Q_PSIbin_exp_coeff_negPSI.png",
+                                    "results/key_displays/NDVI_Q_PSIbin_exp_slope_negPSI.png")
 
 #### NDVI Q - TDiffbin ####
 
