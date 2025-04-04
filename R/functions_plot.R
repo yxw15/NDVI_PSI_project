@@ -411,263 +411,285 @@ NDVI_TDiffbin <- function(df, bin_width = 3) {
   return(meanNDVI_TDiffbin_species)
 }
 
-plot_NDVI_Q_PSIbin_AIC_exp_linear <- function(data, save_aic_fig) {
+TDiff_PSIbin <- function(df, bin_width = 50) {
   
-  # Process data with your custom NDVI_PSIbin function and remove missing values
-  data <- NDVI_PSIbin(data)
-  data <- na.omit(data)
-  
-  # Load required libraries
-  library(ggplot2)
   library(dplyr)
-  library(tibble)
-  library(tidyr)
-  library(purrr)
   
-  # Identify the value column and order species; define the color palette
-  value_col <- "avg_value"
-  species_order <- c("Oak", "Beech", "Spruce", "Pine")
-  data$species <- factor(data$species, levels = species_order)
+  # Identify the correct column
+  value_column <- if ("transpiration_deficit" %in% names(df)) "transpiration_deficit"
   
-  # Define a palette for species (for consistency, if needed later)
-  cb_palette <- c("Oak"   = "#E69F00",
-                  "Beech" = "#0072B2",
-                  "Spruce"= "#009E73",
-                  "Pine"  = "#F0E442")
+  # Total pixel count per species
+  species_totals <- df %>%
+    group_by(species) %>%
+    summarise(total_pixels = n(), .groups = "drop")
   
-  # Create a positive soil water potential variable (x = -bin_median)
-  data <- data %>% mutate(x = -bin_median)
+  # Define bin breaks dynamically
+  psi_min <- floor(min(df$soil_water_potential, na.rm = TRUE))
+  psi_max <- ceiling(max(df$soil_water_potential, na.rm = TRUE))
+  bin_breaks <- seq(psi_min, psi_max, by = bin_width)
   
-  # Clean data: remove rows with missing or non-finite values
-  data_clean <- data %>% filter(!is.na(.data[[value_col]]), is.finite(x))
+  df <- df %>%
+    mutate(PSI_bin = cut(soil_water_potential, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
   
-  # Define starting values and control parameters for the exponential model (nls)
-  start_list <- list(a = 5, b = 3, c = 0.001)
-  control_params <- nls.control(maxiter = 200, minFactor = 1e-4)
+  # Compute mean transpiration_deficit and count per bin per species
+  meanTDiff_PSIbin_species <- df %>%
+    group_by(species, PSI_bin) %>%
+    summarise(
+      avg_transpiration_deficit = mean(.data[[value_column]], na.rm = TRUE),
+      count = n(),
+      .groups = 'drop'
+    ) %>%
+    mutate(
+      bin_median = sapply(as.character(PSI_bin), function(bin_label) {
+        nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
+        mean(nums)
+      })
+    ) %>%
+    left_join(species_totals, by = "species") %>%
+    mutate(percentage = count / total_pixels) %>%
+    filter(percentage > 0.001) %>%
+    select(species, PSI_bin, bin_median, avg_transpiration_deficit, count, total_pixels, percentage)
   
-  # Initialize an empty list to store AIC results for each species and model
-  aic_results <- list()
-  
-  # Loop through each species to fit the models and compute AIC and annotations
-  for (sp in levels(data_clean$species)) {
-    sp_data <- data_clean %>% filter(species == sp)
-    
-    # Fit the linear model
-    lm_linear <- lm(avg_value ~ x, data = sp_data)
-    aic_linear <- AIC(lm_linear)
-    r2_linear <- summary(lm_linear)$r.squared
-    
-    # Fit the exponential model using nls
-    aic_exp <- NA
-    r2_exp <- NA
-    nls_exp <- tryCatch({
-      nls(avg_value ~ a + b * exp(-c * x), 
-          data = sp_data, 
-          start = start_list, 
-          control = control_params)
-    }, error = function(e) NULL)
-    
-    if (!is.null(nls_exp)) {
-      aic_exp <- AIC(nls_exp)
-      res <- resid(nls_exp)
-      ss_res <- sum(res^2)
-      ss_tot <- sum((sp_data[[value_col]] - mean(sp_data[[value_col]]))^2)
-      r2_exp <- 1 - ss_res / ss_tot
-    }
-    
-    # Create annotation labels: show only R² values
-    label_fun <- function(r2) {
-      if (is.na(r2)) return("NA")
-      return(as.character(round(r2, 2)))
-    }
-    
-    labels <- c(
-      label_fun(r2_linear),
-      label_fun(r2_exp)
-    )
-    
-    # Combine AICs and labels for the two models
-    sp_results <- data.frame(
-      species = sp,
-      Model = c("Linear", "Exponential"),
-      AIC = c(aic_linear, aic_exp),
-      Label = labels
-    )
-    
-    # Set Y position to the center of the bar for text annotation
-    sp_results$y_label_pos <- sp_results$AIC / 2
-    
-    aic_results[[sp]] <- sp_results
-  }
-  
-  # Combine results from all species
-  aic_df <- do.call(rbind, aic_results)
-  aic_df$species <- factor(aic_df$species, levels = species_order)
-  
-  # Print AIC table for inspection
-  print(aic_df)
-  
-  # Define the model color palette for the two models
-  model_palette <- c("Linear" = "orange",
-                     "Exponential" = "dodgerblue")
-  
-  # Plot the AIC comparisons
-  p_aic <- ggplot(aic_df, aes(x = species, y = AIC, fill = Model)) +
-    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
-    geom_text(aes(label = Label, y = y_label_pos),
-              position = position_dodge(width = 0.9),
-              vjust = 0.5, size = 6, color = "black") +
-    labs(x = "Species", y = "AIC", 
-         title = "Model Comparison via AIC for NDVI Quantiles - PSI") +
-    scale_fill_manual(values = model_palette) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 22, face = "bold", color = "black"),
-      plot.subtitle = element_text(hjust = 0.5, size = 18),
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      legend.position = "top",
-      legend.text = element_text(size = 14),
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      strip.text = element_text(face = "bold", size = 16)
-    )
-  
-  print(p_aic)
-  
-  # Save the resulting plot to the specified file
-  dir.create(dirname(save_aic_fig), recursive = TRUE, showWarnings = FALSE)
-  ggsave(filename = save_aic_fig, plot = p_aic, width = 10, height = 8, dpi = 300)
+  return(meanTDiff_PSIbin_species)
 }
 
-plot_NDVI_Q_TDiffbin_AIC_exp_linear <- function(data, save_aic_fig) {
-  
-  # Process data with NDVI_TDiffbin and remove missing rows
-  data <- NDVI_TDiffbin(data)
-  data <- na.omit(data)
+plot_combined_AIC_R2 <- function(data, save_combined_fig) {
   
   # Load required libraries
   library(ggplot2)
   library(dplyr)
-  library(tibble)
   library(tidyr)
   library(purrr)
+  library(patchwork)
   
-  # Identify the value column and order species
-  value_col <- "avg_value"
+  # Define common species order
   species_order <- c("Oak", "Beech", "Spruce", "Pine")
-  data$species <- factor(data$species, levels = species_order)
   
-  # For TDiff, use bin_median as x
-  data <- data %>% mutate(x = bin_median)
+  #### Panel A: NDVI ~ PSIbin ####
+  data_a <- NDVI_PSIbin(data)
+  data_a <- na.omit(data_a)
+  value_col_a <- "avg_value"
+  data_a$species <- factor(data_a$species, levels = species_order)
+  data_a <- data_a %>% mutate(x = -bin_median)
   
-  # Clean data: remove rows with missing or non-finite values in avg_value and x
-  data_clean <- data %>% filter(!is.na(.data[[value_col]]), is.finite(x))
+  start_list_a <- list(a = 5, b = 3, c = 0.001)
+  control_params_a <- nls.control(maxiter = 200, minFactor = 1e-4)
   
-  # Define starting values and control parameters for the exponential model 
-  start_list <- list(a = 5, b = 7, c = 0.04)
-  control_params <- nls.control(maxiter = 1200, minFactor = 1e-09)
-  
-  # Initialize an empty list to store AIC results for each species and model
-  aic_results <- list()
-  
-  # Loop through each species
-  for (sp in levels(data_clean$species)) {
-    sp_data <- data_clean %>% filter(species == sp)
+  aic_results_a <- list()
+  for (sp in levels(data_a$species)) {
+    sp_data <- data_a %>% filter(species == sp)
     
-    # Fit linear model: avg_value ~ x
+    # Linear model
     lm_linear <- lm(avg_value ~ x, data = sp_data)
     aic_linear <- AIC(lm_linear)
     r2_linear <- summary(lm_linear)$r.squared
     
-    # Fit exponential model: avg_value ~ a + b * exp(-c * x)
+    # Exponential model
     aic_exp <- NA
     r2_exp <- NA
     nls_exp <- tryCatch({
-      nls(avg_value ~ a + b * exp(-c * x), 
-          data = sp_data, 
-          start = start_list, 
-          control = control_params)
-    }, error = function(e) {
-      NULL
-    })
+      nls(avg_value ~ a + b * exp(-c * x),
+          data = sp_data,
+          start = start_list_a,
+          control = control_params_a)
+    }, error = function(e) NULL)
     if (!is.null(nls_exp)) {
       aic_exp <- AIC(nls_exp)
       res <- resid(nls_exp)
       ss_res <- sum(res^2)
-      ss_tot <- sum((sp_data[[value_col]] - mean(sp_data[[value_col]]))^2)
+      ss_tot <- sum((sp_data[[value_col_a]] - mean(sp_data[[value_col_a]]))^2)
       r2_exp <- 1 - ss_res / ss_tot
     }
     
-    # Create annotation labels (rounded R² values)
-    label_fun <- function(r2) {
-      if (is.na(r2)) return("NA")
-      return(as.character(round(r2, 2)))
-    }
-    
-    labels <- c(
-      label_fun(r2_linear),
-      label_fun(r2_exp)
-    )
-    
-    # Combine results for this species
     sp_results <- data.frame(
       species = sp,
       Model = c("Linear", "Exponential"),
       AIC = c(aic_linear, aic_exp),
-      Label = labels
+      R2 = c(r2_linear, r2_exp)
     )
     sp_results$y_label_pos <- sp_results$AIC / 2
-    
-    aic_results[[sp]] <- sp_results
+    aic_results_a[[sp]] <- sp_results
   }
+  aic_df_a <- do.call(rbind, aic_results_a)
+  aic_df_a$species <- factor(aic_df_a$species, levels = species_order)
   
-  # Combine AIC results for all species into one data frame
-  aic_df <- do.call(rbind, aic_results)
-  aic_df$species <- factor(aic_df$species, levels = species_order)
+  # Shared color palette for Panels A and B
+  model_palette_shared <- c("Linear" = "orange",
+                            "Exponential" = "dodgerblue")
   
-  # Define the model palette for the two models
-  model_palette <- c("Linear" = "orange", "Exponential" = "dodgerblue")
-  
-  # Create a grouped bar plot of AIC values per species for each model with R² annotations
-  p_aic <- ggplot(aic_df, aes(x = species, y = AIC, fill = Model)) +
+  p_a <- ggplot(aic_df_a, aes(x = species, y = AIC, fill = Model)) +
     geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
-    geom_text(aes(label = Label, y = y_label_pos),
-              position = position_dodge(width = 0.8),
-              vjust = 0.5, size = 6, color = "black") +
-    labs(x = "Species", y = "AIC", 
-         title = "Model Comparison via AIC for NDVI Quantiles - TDiff") +
-    scale_fill_manual(values = model_palette) +
+    geom_text(aes(label = round(R2, 2), y = y_label_pos),
+              position = position_dodge(width = 0.9),
+              vjust = 0.5, size = 8, color = "black") +
+    labs(x = "", y = "AIC", title = "NDVI ~ PSIbin") +
+    scale_fill_manual(values = model_palette_shared, name = "") +
     theme_minimal() +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
+      axis.text.x    = element_text(angle = 0, hjust = 0.5, size = 14),
+      plot.background= element_rect(fill = "white", color = "white"),
+      panel.background=element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 22, face = "bold", color = "black"),
-      plot.subtitle = element_text(hjust = 0.5, size = 18),
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      plot.title     = element_text(hjust = 0.5, size = 22, face = "bold", color = "black"),
+      axis.title     = element_text(face = "bold", size = 16),
+      axis.text      = element_text(color = "black", size = 14),
+      panel.border   = element_rect(color = "black", fill = NA, linewidth = 0.5),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       legend.position = "top",
-      legend.text = element_text(size = 14),
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      strip.text = element_text(face = "bold", size = 16)
+      legend.text    = element_text(size = 14)
+    )+
+    labs(caption = "(a)") +
+    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0.5))
+  
+  #### Panel B: NDVI ~ TDiffbin ####
+  data_b <- NDVI_TDiffbin(data)
+  data_b <- na.omit(data_b)
+  value_col_b <- "avg_value"
+  data_b$species <- factor(data_b$species, levels = species_order)
+  data_b <- data_b %>% mutate(x = bin_median)
+  
+  start_list_b <- list(a = 5, b = 7, c = 0.04)
+  control_params_b <- nls.control(maxiter = 1200, minFactor = 1e-09)
+  
+  aic_results_b <- list()
+  for (sp in levels(data_b$species)) {
+    sp_data <- data_b %>% filter(species == sp)
+    
+    lm_linear <- lm(avg_value ~ x, data = sp_data)
+    aic_linear <- AIC(lm_linear)
+    r2_linear <- summary(lm_linear)$r.squared
+    
+    aic_exp <- NA
+    r2_exp <- NA
+    nls_exp <- tryCatch({
+      nls(avg_value ~ a + b * exp(-c * x),
+          data = sp_data,
+          start = start_list_b,
+          control = control_params_b)
+    }, error = function(e) NULL)
+    if (!is.null(nls_exp)) {
+      aic_exp <- AIC(nls_exp)
+      res <- resid(nls_exp)
+      ss_res <- sum(res^2)
+      ss_tot <- sum((sp_data[[value_col_b]] - mean(sp_data[[value_col_b]]))^2)
+      r2_exp <- 1 - ss_res / ss_tot
+    }
+    
+    sp_results <- data.frame(
+      species = sp,
+      Model = c("Linear", "Exponential"),
+      AIC = c(aic_linear, aic_exp),
+      R2 = c(r2_linear, r2_exp)
     )
+    sp_results$y_label_pos <- sp_results$AIC / 2
+    aic_results_b[[sp]] <- sp_results
+  }
+  aic_df_b <- do.call(rbind, aic_results_b)
+  aic_df_b$species <- factor(aic_df_b$species, levels = species_order)
   
-  print(p_aic)
+  p_b <- ggplot(aic_df_b, aes(x = species, y = AIC, fill = Model)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+    geom_text(aes(label = round(R2, 2), y = y_label_pos),
+              position = position_dodge(width = 0.9),
+              vjust = 0.5, size = 8, color = "black") +
+    labs(x = "", y = "AIC", title = "NDVI ~ TDiffbin") +
+    scale_fill_manual(values = model_palette_shared, name = "") +
+    theme_minimal() +
+    theme(
+      axis.text.x    = element_text(angle = 0, hjust = 0.5, size = 14),
+      plot.background= element_rect(fill = "white", color = "white"),
+      panel.background=element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title     = element_text(hjust = 0.5, size = 22, face = "bold", color = "black"),
+      axis.title     = element_text(face = "bold", size = 16),
+      axis.text      = element_text(color = "black", size = 14),
+      panel.border   = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      legend.text    = element_text(size = 14)
+    )+
+    labs(caption = "(b)") +
+    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0.5))
   
-  # Save the AIC comparison plot to file
-  dir.create(dirname(save_aic_fig), recursive = TRUE, showWarnings = FALSE)
-  ggsave(filename = save_aic_fig, plot = p_aic, width = 10, height = 8, dpi = 300)
+  #### Panel C: TDiff ~ PSIbin ####
+  data_c <- TDiff_PSIbin(data)
+  data_c <- na.omit(data_c)
+  value_col_c <- "avg_transpiration_deficit"
+  data_c$species <- factor(data_c$species, levels = species_order)
+  data_c <- data_c %>% mutate(x = bin_median)
+  
+  aic_results_c <- list()
+  for (sp in levels(data_c$species)) {
+    sp_data <- data_c %>% filter(species == sp)
+    
+    lm_linear <- lm(avg_transpiration_deficit ~ x, data = sp_data)
+    aic_linear <- AIC(lm_linear)
+    r2_linear <- summary(lm_linear)$r.squared
+    
+    lm_poly2 <- lm(avg_transpiration_deficit ~ x + I(x^2), data = sp_data)
+    aic_poly2 <- AIC(lm_poly2)
+    r2_poly2 <- summary(lm_poly2)$r.squared
+    
+    lm_poly3 <- lm(avg_transpiration_deficit ~ x + I(x^2) + I(x^3), data = sp_data)
+    aic_poly3 <- AIC(lm_poly3)
+    r2_poly3 <- summary(lm_poly3)$r.squared
+    
+    sp_results <- data.frame(
+      species = sp,
+      Model = c("Linear", "Poly2", "Poly3"),
+      AIC = c(aic_linear, aic_poly2, aic_poly3),
+      R2 = c(r2_linear, r2_poly2, r2_poly3)
+    )
+    sp_results$y_label_pos <- sp_results$AIC / 2
+    aic_results_c[[sp]] <- sp_results
+  }
+  aic_df_c <- do.call(rbind, aic_results_c)
+  aic_df_c$species <- factor(aic_df_c$species, levels = species_order)
+  
+  model_palette_c <- c("Linear" = "orange",
+                       "Poly2"  = "dodgerblue",
+                       "Poly3"  = "green4")
+  
+  p_c <- ggplot(aic_df_c, aes(x = species, y = AIC, fill = Model)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+    geom_text(aes(label = round(R2, 2), y = y_label_pos),
+              position = position_dodge(width = 0.9),
+              vjust = 0.5, size = 8, color = "black") +
+    labs(x = "", y = "AIC", title = "TDiff ~ PSIbin") +
+    scale_fill_manual(values = model_palette_c, name = "") +
+    theme_minimal() +
+    theme(
+      axis.text.x    = element_text(angle = 0, hjust = 0.5, size = 14),
+      plot.background= element_rect(fill = "white", color = "white"),
+      panel.background=element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title     = element_text(hjust = 0.5, size = 22, face = "bold", color = "black"),
+      axis.title     = element_text(face = "bold", size = 16),
+      axis.text      = element_text(color = "black", size = 14),
+      panel.border   = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      legend.text    = element_text(size = 14)
+    )+
+    labs(caption = "(c)") +
+    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0.5))
+  
+  # Combine Panels A and B with a shared legend placed below (centered)
+  combined_top <- (p_a | p_b) + 
+    plot_layout(guides = "collect") & 
+    theme(legend.position = "top", legend.box = "horizontal")
+  
+  # Combine with Panel C below
+  combined_plot <- combined_top / p_c
+  
+  # Save the combined figure to file
+  dir.create(dirname(save_combined_fig), recursive = TRUE, showWarnings = FALSE)
+  ggsave(filename = save_combined_fig, plot = combined_plot, width = 14, height = 12, dpi = 300)
+  
+  print(combined_plot)
 }
 
 plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope_fig) {
@@ -941,6 +963,4 @@ plot_NDVI_Q_PSIbin_exp_slope_negPSI(all_results_df,
                                     "results/key_displays/NDVI_Q_PSIbin_exp_coeff_negPSI.png",
                                     "results/key_displays/NDVI_Q_PSIbin_exp_slope_negPSI.png")
 
-plot_NDVI_Q_PSIbin_AIC_exp_linear(all_results_df,  "results/key_displays/NDVI_Q_PSIbin_AIC_exp_linear.png")
-plot_NDVI_Q_TDiffbin_AIC_exp_linear(all_results_df,  "results/key_displays/NDVI_Q_TDiffbin_AIC_exp_linear.png")
-
+plot_combined_AIC_R2(all_results_df,  "results/key_displays/AIC.png")
