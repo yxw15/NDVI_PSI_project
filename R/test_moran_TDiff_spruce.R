@@ -18,9 +18,9 @@ load_data <- function(path, data_file) {
 
 # Define species and color palette
 get_species_palette <- function() {
-  cat("Defining species list and color palette for Beech...\n")
-  species_list <- "Beech"
-  cb_palette <- c("Beech" = "#0072B2")
+  cat("Defining species list and color palette for Spruce...\n")
+  species_list <- "Spruce"
+  cb_palette <- c("Spruce" = "#009E73")
   cat("Species list and color palette defined.\n\n")
   list(species_list = species_list, cb_palette = cb_palette)
 }
@@ -130,7 +130,7 @@ generate_plot <- function(data, variable, palette, theme) {
     theme
   
   print(plot)
-  output_file <- paste0("results_moran/Beech_", variable, "_moran_I_vs_distance.png")
+  output_file <- paste0("results_moran/Spruce_", variable, "_moran_I_vs_distance.png")
   cat("  Saving plot to ", output_file, "...\n", sep = "")
   ggsave(output_file, plot, width = 10, height = 6, dpi = 300)
   cat("  Plot saved.\n\n")
@@ -138,7 +138,7 @@ generate_plot <- function(data, variable, palette, theme) {
 
 # Save results to CSV
 save_results <- function(data, variable) {
-  file <- paste0("results_moran/data/Beech_", variable, "_moran_data.csv")
+  file <- paste0("results_moran/data/Spruce_", variable, "_moran_data.csv")
   cat("  Saving intermediate data to ", file, "...\n", sep = "")
   write.csv(data, file = file, row.names = FALSE)
   cat("  Data saved.\n")
@@ -148,14 +148,13 @@ save_results <- function(data, variable) {
 
 main <- function() {
   # Config
-  path <- "/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project"
-  data_file <- "results/Data/All_Species_Quantiles_PSI_TDiff.RData"
-  variable <- "soil_water_potential"
+  setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
+  load("results/Data/All_Species_Quantiles_PSI_TDiff.RData")
+  variable <- "transpiration_deficit"
   distances <- seq(1000, 20000, by = 4000)
   
   # Run steps
   load_libraries()
-  load_data(path, data_file)
   create_result_dirs()
   
   params <- get_species_palette()
