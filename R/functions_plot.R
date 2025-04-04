@@ -58,6 +58,7 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
   library(ggplot2)
   library(patchwork)
   library(dplyr)
+  library(cowplot)  # For get_legend and plot_grid
   
   # Get species-level averaged data
   df_species <- df_average_year_species(df_all)
@@ -90,7 +91,7 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
   # Define a custom theme with consistent text sizes
   custom_theme <- theme_minimal() +
     theme(
-      axis.text.x = element_text(angle = 0, hjust = 1, size = 14),
+      axis.text.x = element_text(angle = 0, hjust = 0.5, size = 14),
       plot.background = element_rect(fill = "white", color = "white"),
       panel.background = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
@@ -105,15 +106,20 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
       panel.grid.minor = element_blank()
     )
   
+  # Create an x-axis scale that shows breaks every 2 years from 2003 to 2024
+  x_scale <- scale_x_continuous(breaks = seq(2003, 2024, by = 2), limits = c(2003, 2024))
+  
   ### TIME SERIES PLOTS ###
-  # Panel (a): NDVI Time Series – keep the legend here
+  # Panel (a): NDVI Time Series – keep the legend (with horizontal layout) for extraction later
   p1 <- ggplot(df_species, aes(x = as.numeric(year), y = .data[[ndvi_column]], color = species)) +
     geom_point(size = 3, alpha = 0.7) +
     geom_line() +
     labs(title = "", x = "", y = "NDVI quantiles", color = "Species") +
-    scale_color_manual(values = cb_palette, name = "") +
+    scale_color_manual(values = cb_palette, name = "", guide = guide_legend(nrow = 1)) +
     custom_theme +
-    labs(caption = "(a)")
+    labs(caption = "(a)") +
+    theme(legend.position = "bottom", legend.direction = "horizontal") +
+    x_scale
   
   # Panel (b): Soil Water Potential Time Series – remove legend
   p2 <- ggplot(df_species, aes(x = as.numeric(year), y = avg_psi, color = species)) +
@@ -123,7 +129,8 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
     scale_color_manual(values = cb_palette, name = "") +
     custom_theme +
     guides(color = "none") +
-    labs(caption = "(b)")
+    labs(caption = "(b)") +
+    x_scale
   
   # Panel (c): Transpiration Deficit Time Series – remove legend
   p3 <- ggplot(df_species, aes(x = as.numeric(year), y = avg_tdiff, color = species)) +
@@ -133,7 +140,8 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
     scale_color_manual(values = cb_palette, name = "") +
     custom_theme +
     guides(color = "none") +
-    labs(caption = "(c)")
+    labs(caption = "(c)") +
+    x_scale
   
   # Combine time series panels vertically
   ts_plot <- p1 / p2 / p3
@@ -181,21 +189,137 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
   # Combine correlation panels side-by-side
   corr_plot <- p_d | p_e
   
-  # Combine time series (ts_plot) on top and correlation (corr_plot) on bottom;
-  # use patchwork's guide collection to pull a single shared legend from p1.
-  combined_plot <- ts_plot / corr_plot + 
-    plot_layout(guides = "collect") & 
-    theme(legend.position = "bottom")
+  # Combine time series on top and correlations on bottom, and remove legends from this combination
+  combined_main <- ts_plot / corr_plot
+  combined_main <- combined_main & theme(legend.position = "top")
   
-  print(combined_plot)
+  # Extract the legend from p1 (now a single horizontal guide)
+  legend <- suppressWarnings(cowplot::get_legend(p1))
   
-  # Save the combined figure
-  ggsave(filename = output_path, plot = combined_plot, width = 10, height = 14, dpi = 300)
+  # Combine the main plot and the legend with the legend underneath
+  final_plot <- cowplot::plot_grid(combined_main, legend, ncol = 1, rel_heights = c(1, 0.1))
+  
+  print(final_plot)
+  ggsave(filename = output_path, plot = final_plot, width = 12, height = 14, dpi = 300)
 }
 
-plot_time_series_and_correlation_combined(all_results_df,
-                                          "results/key_displays/time_series_Quantiles_PSI_TDiff_species.png")
-
+plot_yearly_mean_linear_coeffs <- function(df_all, output_path) {
+  library(ggplot2)
+  library(dplyr)
+  library(tidyr)
+  library(patchwork)
+  
+  # Get species-level averaged data (assuming df_average_year_species is available)
+  df_species <- df_average_year_species(df_all)
+  
+  # Set species order and assign factor levels
+  species_order <- c("Oak", "Beech", "Spruce", "Pine")
+  df_species$species <- factor(df_species$species, levels = species_order)
+  
+  # Determine NDVI column and label
+  ndvi_column <- if ("avg_quantile" %in% names(df_species)) {
+    "avg_quantile"
+  } else if ("avg_proportion" %in% names(df_species)) {
+    "avg_proportion"
+  } else {
+    stop("Neither avg_quantile nor avg_proportion column found in species data.")
+  }
+  
+  ndvi_label <- if (ndvi_column == "avg_quantile") "NDVI quantiles" else "NDVI proportions"
+  
+  # Define the color palette for the species
+  cb_palette <- c("Oak"   = "#E69F00", 
+                  "Beech" = "#0072B2",
+                  "Spruce"= "#009E73", 
+                  "Pine"  = "#F0E442")
+  
+  # Define a custom theme similar to your provided theme.
+  custom_theme <- theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    plot.background = element_rect(fill = "white", color = "white"),
+    panel.background = element_rect(fill = "white"),
+    legend.background = element_rect(fill = "white", color = "white"),
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+    plot.subtitle = element_text(hjust = 0.5),
+    axis.title = element_text(face = "bold", size = 16),
+    axis.text = element_text(color = "black", size = 14),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "top",
+    legend.text = element_text(size = 14),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    strip.text = element_text(face = "bold", size = 12)
+  )
+  
+  ### NDVI ~ Soil Water Potential Regression Coefficients (Panel a) ###
+  coeffs_psi <- do.call(rbind, lapply(species_order, function(sp) {
+    df_sp <- df_species %>% filter(species == sp)
+    mod <- lm(as.formula(paste0(ndvi_column, " ~ avg_psi")), data = df_sp)
+    coef_vals <- coef(mod)
+    p_vals <- summary(mod)$coefficients[,4]
+    data.frame(species = sp, 
+               term = names(coef_vals), 
+               estimate = coef_vals, 
+               p.value = p_vals,
+               stringsAsFactors = FALSE)
+  }))
+  # Rename coefficient terms: intercept -> a, slope -> b
+  coeffs_psi$term <- dplyr::recode(coeffs_psi$term, "(Intercept)" = "a", "avg_psi" = "b")
+  # Ensure species factor order is maintained
+  coeffs_psi$species <- factor(coeffs_psi$species, levels = species_order)
+  coeffs_psi$label <- ifelse(coeffs_psi$p.value < 0.05, "*", sprintf("%.2f", coeffs_psi$p.value))
+  
+  p_coeff_psi <- ggplot(coeffs_psi, aes(x = species, y = estimate, fill = species)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_text(aes(label = label, y = estimate/2),
+              position = position_dodge(width = 0.9), color = "black", size = 4) +
+    scale_fill_manual(values = cb_palette, name = "") +
+    facet_wrap(~ term, scales = "free_y") +
+    labs(title = "NDVI ~ Soil Water Potential",
+         x = "", y = "Coefficient Value") +
+    custom_theme +
+    labs(caption = "(a)") +
+    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0.5))
+  
+  ### NDVI ~ Transpiration Deficit Regression Coefficients (Panel b) ###
+  coeffs_tdiff <- do.call(rbind, lapply(species_order, function(sp) {
+    df_sp <- df_species %>% filter(species == sp)
+    mod <- lm(as.formula(paste0(ndvi_column, " ~ avg_tdiff")), data = df_sp)
+    coef_vals <- coef(mod)
+    p_vals <- summary(mod)$coefficients[,4]
+    data.frame(species = sp, 
+               term = names(coef_vals), 
+               estimate = coef_vals, 
+               p.value = p_vals,
+               stringsAsFactors = FALSE)
+  }))
+  # Rename coefficient terms: intercept -> a, slope -> b
+  coeffs_tdiff$term <- dplyr::recode(coeffs_tdiff$term, "(Intercept)" = "a", "avg_tdiff" = "b")
+  # Ensure species factor order is maintained
+  coeffs_tdiff$species <- factor(coeffs_tdiff$species, levels = species_order)
+  coeffs_tdiff$label <- ifelse(coeffs_tdiff$p.value < 0.05, "*", sprintf("%.2f", coeffs_tdiff$p.value))
+  
+  p_coeff_tdiff <- ggplot(coeffs_tdiff, aes(x = species, y = estimate, fill = species)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    geom_text(aes(label = label, y = estimate/2),
+              position = position_dodge(width = 0.9), color = "black", size = 4) +
+    scale_fill_manual(values = cb_palette, name = "") +
+    facet_wrap(~ term, scales = "free_y") +
+    labs(title = "NDVI ~ Transpiration Deficit",
+         x = "", y = "") +
+    custom_theme +
+    labs(caption = "(b)") +
+    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0.5))
+  
+  ### Combine the Two Panels Side-by-Side with a Shared Legend and Overall Caption ###
+  combined_plot <- p_coeff_psi + p_coeff_tdiff + 
+    plot_layout(guides = "collect") &
+    theme(legend.position = "top")
+  
+  print(combined_plot)
+  ggsave(filename = output_path, plot = combined_plot, width = 14, height = 8, dpi = 300)
+}
 
 NDVI_PSIbin <- function(df, bin_width = 50) {
   
@@ -238,6 +362,312 @@ NDVI_PSIbin <- function(df, bin_width = 50) {
     select(species, PSI_bin, bin_median, avg_value, count, total_pixels, percentage)
   
   return(meanNDVI_PSIbin_species)
+}
+
+NDVI_TDiffbin <- function(df, bin_width = 3) {
+  
+  library(dplyr)
+  
+  # Identify the correct column (Quantiles or Proportions)
+  value_col <- if ("Quantiles" %in% names(df)) "Quantiles" else "Proportions"
+  
+  # Compute total pixels per species
+  species_totals <- df %>%
+    group_by(species) %>%
+    summarise(total_pixels = n(), .groups = "drop")
+  
+  # Define bin breaks for transpiration_deficit
+  tdiff_min <- floor(min(df$transpiration_deficit, na.rm = TRUE))
+  tdiff_max <- ceiling(max(df$transpiration_deficit, na.rm = TRUE))
+  bin_breaks <- seq(tdiff_min, tdiff_max, by = bin_width)
+  
+  # Create TDiff_bin column
+  df <- df %>%
+    mutate(TDiff_bin = cut(transpiration_deficit,
+                           breaks = bin_breaks,
+                           include.lowest = TRUE,
+                           right = FALSE))
+  
+  # Helper function to compute bin median
+  get_bin_median <- function(bin_label) {
+    nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
+    mean(nums)
+  }
+  
+  # Group, summarize, calculate percentage, and filter
+  meanNDVI_TDiffbin_species <- df %>%
+    group_by(species, TDiff_bin) %>%
+    summarise(
+      avg_value = mean(.data[[value_col]], na.rm = TRUE),
+      count = n(),
+      .groups = 'drop'
+    ) %>%
+    mutate(bin_median = sapply(as.character(TDiff_bin), get_bin_median)) %>%
+    left_join(species_totals, by = "species") %>%
+    mutate(percentage = count / total_pixels) %>%
+    filter(percentage >= 0.0001) %>%
+    select(species, TDiff_bin, bin_median, avg_value, count, total_pixels, percentage)
+  
+  return(meanNDVI_TDiffbin_species)
+}
+
+plot_NDVI_Q_PSIbin_AIC_exp_linear <- function(data, save_aic_fig) {
+  
+  # Process data with your custom NDVI_PSIbin function and remove missing values
+  data <- NDVI_PSIbin(data)
+  data <- na.omit(data)
+  
+  # Load required libraries
+  library(ggplot2)
+  library(dplyr)
+  library(tibble)
+  library(tidyr)
+  library(purrr)
+  
+  # Identify the value column and order species; define the color palette
+  value_col <- "avg_value"
+  species_order <- c("Oak", "Beech", "Spruce", "Pine")
+  data$species <- factor(data$species, levels = species_order)
+  
+  # Define a palette for species (for consistency, if needed later)
+  cb_palette <- c("Oak"   = "#E69F00",
+                  "Beech" = "#0072B2",
+                  "Spruce"= "#009E73",
+                  "Pine"  = "#F0E442")
+  
+  # Create a positive soil water potential variable (x = -bin_median)
+  data <- data %>% mutate(x = -bin_median)
+  
+  # Clean data: remove rows with missing or non-finite values
+  data_clean <- data %>% filter(!is.na(.data[[value_col]]), is.finite(x))
+  
+  # Define starting values and control parameters for the exponential model (nls)
+  start_list <- list(a = 5, b = 3, c = 0.001)
+  control_params <- nls.control(maxiter = 200, minFactor = 1e-4)
+  
+  # Initialize an empty list to store AIC results for each species and model
+  aic_results <- list()
+  
+  # Loop through each species to fit the models and compute AIC and annotations
+  for (sp in levels(data_clean$species)) {
+    sp_data <- data_clean %>% filter(species == sp)
+    
+    # Fit the linear model
+    lm_linear <- lm(avg_value ~ x, data = sp_data)
+    aic_linear <- AIC(lm_linear)
+    r2_linear <- summary(lm_linear)$r.squared
+    
+    # Fit the exponential model using nls
+    aic_exp <- NA
+    r2_exp <- NA
+    nls_exp <- tryCatch({
+      nls(avg_value ~ a + b * exp(-c * x), 
+          data = sp_data, 
+          start = start_list, 
+          control = control_params)
+    }, error = function(e) NULL)
+    
+    if (!is.null(nls_exp)) {
+      aic_exp <- AIC(nls_exp)
+      res <- resid(nls_exp)
+      ss_res <- sum(res^2)
+      ss_tot <- sum((sp_data[[value_col]] - mean(sp_data[[value_col]]))^2)
+      r2_exp <- 1 - ss_res / ss_tot
+    }
+    
+    # Create annotation labels: show only R² values
+    label_fun <- function(r2) {
+      if (is.na(r2)) return("NA")
+      return(as.character(round(r2, 2)))
+    }
+    
+    labels <- c(
+      label_fun(r2_linear),
+      label_fun(r2_exp)
+    )
+    
+    # Combine AICs and labels for the two models
+    sp_results <- data.frame(
+      species = sp,
+      Model = c("Linear", "Exponential"),
+      AIC = c(aic_linear, aic_exp),
+      Label = labels
+    )
+    
+    # Set Y position to the center of the bar for text annotation
+    sp_results$y_label_pos <- sp_results$AIC / 2
+    
+    aic_results[[sp]] <- sp_results
+  }
+  
+  # Combine results from all species
+  aic_df <- do.call(rbind, aic_results)
+  aic_df$species <- factor(aic_df$species, levels = species_order)
+  
+  # Print AIC table for inspection
+  print(aic_df)
+  
+  # Define the model color palette for the two models
+  model_palette <- c("Linear" = "orange",
+                     "Exponential" = "dodgerblue")
+  
+  # Plot the AIC comparisons
+  p_aic <- ggplot(aic_df, aes(x = species, y = AIC, fill = Model)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+    geom_text(aes(label = Label, y = y_label_pos),
+              position = position_dodge(width = 0.9),
+              vjust = 0.5, size = 6, color = "black") +
+    labs(x = "Species", y = "AIC", 
+         title = "Model Comparison via AIC for NDVI Quantiles - PSI") +
+    scale_fill_manual(values = model_palette) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title = element_text(hjust = 0.5, size = 22, face = "bold", color = "black"),
+      plot.subtitle = element_text(hjust = 0.5, size = 18),
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      legend.text = element_text(size = 14),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.text = element_text(face = "bold", size = 16)
+    )
+  
+  print(p_aic)
+  
+  # Save the resulting plot to the specified file
+  dir.create(dirname(save_aic_fig), recursive = TRUE, showWarnings = FALSE)
+  ggsave(filename = save_aic_fig, plot = p_aic, width = 10, height = 8, dpi = 300)
+}
+
+plot_NDVI_Q_TDiffbin_AIC_exp_linear <- function(data, save_aic_fig) {
+  
+  # Process data with NDVI_TDiffbin and remove missing rows
+  data <- NDVI_TDiffbin(data)
+  data <- na.omit(data)
+  
+  # Load required libraries
+  library(ggplot2)
+  library(dplyr)
+  library(tibble)
+  library(tidyr)
+  library(purrr)
+  
+  # Identify the value column and order species
+  value_col <- "avg_value"
+  species_order <- c("Oak", "Beech", "Spruce", "Pine")
+  data$species <- factor(data$species, levels = species_order)
+  
+  # For TDiff, use bin_median as x
+  data <- data %>% mutate(x = bin_median)
+  
+  # Clean data: remove rows with missing or non-finite values in avg_value and x
+  data_clean <- data %>% filter(!is.na(.data[[value_col]]), is.finite(x))
+  
+  # Define starting values and control parameters for the exponential model 
+  start_list <- list(a = 5, b = 7, c = 0.04)
+  control_params <- nls.control(maxiter = 1200, minFactor = 1e-09)
+  
+  # Initialize an empty list to store AIC results for each species and model
+  aic_results <- list()
+  
+  # Loop through each species
+  for (sp in levels(data_clean$species)) {
+    sp_data <- data_clean %>% filter(species == sp)
+    
+    # Fit linear model: avg_value ~ x
+    lm_linear <- lm(avg_value ~ x, data = sp_data)
+    aic_linear <- AIC(lm_linear)
+    r2_linear <- summary(lm_linear)$r.squared
+    
+    # Fit exponential model: avg_value ~ a + b * exp(-c * x)
+    aic_exp <- NA
+    r2_exp <- NA
+    nls_exp <- tryCatch({
+      nls(avg_value ~ a + b * exp(-c * x), 
+          data = sp_data, 
+          start = start_list, 
+          control = control_params)
+    }, error = function(e) {
+      NULL
+    })
+    if (!is.null(nls_exp)) {
+      aic_exp <- AIC(nls_exp)
+      res <- resid(nls_exp)
+      ss_res <- sum(res^2)
+      ss_tot <- sum((sp_data[[value_col]] - mean(sp_data[[value_col]]))^2)
+      r2_exp <- 1 - ss_res / ss_tot
+    }
+    
+    # Create annotation labels (rounded R² values)
+    label_fun <- function(r2) {
+      if (is.na(r2)) return("NA")
+      return(as.character(round(r2, 2)))
+    }
+    
+    labels <- c(
+      label_fun(r2_linear),
+      label_fun(r2_exp)
+    )
+    
+    # Combine results for this species
+    sp_results <- data.frame(
+      species = sp,
+      Model = c("Linear", "Exponential"),
+      AIC = c(aic_linear, aic_exp),
+      Label = labels
+    )
+    sp_results$y_label_pos <- sp_results$AIC / 2
+    
+    aic_results[[sp]] <- sp_results
+  }
+  
+  # Combine AIC results for all species into one data frame
+  aic_df <- do.call(rbind, aic_results)
+  aic_df$species <- factor(aic_df$species, levels = species_order)
+  
+  # Define the model palette for the two models
+  model_palette <- c("Linear" = "orange", "Exponential" = "dodgerblue")
+  
+  # Create a grouped bar plot of AIC values per species for each model with R² annotations
+  p_aic <- ggplot(aic_df, aes(x = species, y = AIC, fill = Model)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+    geom_text(aes(label = Label, y = y_label_pos),
+              position = position_dodge(width = 0.8),
+              vjust = 0.5, size = 6, color = "black") +
+    labs(x = "Species", y = "AIC", 
+         title = "Model Comparison via AIC for NDVI Quantiles - TDiff") +
+    scale_fill_manual(values = model_palette) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 14),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title = element_text(hjust = 0.5, size = 22, face = "bold", color = "black"),
+      plot.subtitle = element_text(hjust = 0.5, size = 18),
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      legend.text = element_text(size = 14),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.text = element_text(face = "bold", size = 16)
+    )
+  
+  print(p_aic)
+  
+  # Save the AIC comparison plot to file
+  dir.create(dirname(save_aic_fig), recursive = TRUE, showWarnings = FALSE)
+  ggsave(filename = save_aic_fig, plot = p_aic, width = 10, height = 8, dpi = 300)
 }
 
 plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope_fig) {
@@ -323,7 +753,7 @@ plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope
     labs(x = "Soil Water Potential", y = "NDVI Quantiles") +
     theme_minimal() +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
       plot.background = element_rect(fill = "white", color = "white"),
       panel.background = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
@@ -335,10 +765,11 @@ plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope
       panel.border = element_blank(),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
-      legend.position = "top",
+      legend.position = "none",
       legend.text = element_text(size = 14) 
     ) +
     labs(caption = "(a)") +
+    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0.5))+
     coord_cartesian(clip = "off")
   
   #### PANEL B: Bar Plot of x50 Values ####
@@ -349,7 +780,7 @@ plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope
     expand_limits(y = 0) +
     theme_minimal() +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
       axis.title.x = element_blank(),
       axis.title = element_text(face = "bold", size = 16),
       axis.text = element_text(color = "black", size = 14),
@@ -360,7 +791,7 @@ plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope
       panel.grid.minor = element_blank()
     ) +
     labs(caption = "(b)") +
-    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0),
+    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0.5),
           plot.caption.position = "plot")
   
   #### PANEL C: Bar Plot of Absolute Slope at x50 with Error Bars and Annotations ####
@@ -405,7 +836,7 @@ plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope
     expand_limits(y = 0) +
     theme_minimal() +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
       axis.title = element_text(face = "bold", size = 16),
       axis.text = element_text(color = "black", size = 14),
       plot.background = element_rect(fill = "white", color = "white"),
@@ -415,14 +846,32 @@ plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope
       panel.grid.minor = element_blank()
     ) +
     labs(caption = "(c)") +
-    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0),
+    theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0.5),
           plot.caption.position = "plot")
   
   #### COMBINE PANELS ####
-  final_slope_plot <- p_combined + (p_x50 / p_slope) + plot_layout(widths = c(2, 1))
+  # Add legend to panel c only, remove from others
+  p_combined <- p_combined + theme(legend.position = "none")
+  p_x50 <- p_x50 + theme(legend.position = "bottom")
+  p_slope <- p_slope + theme(legend.position = "none")  # Keep legend here
+  
+  # Combine plots and collect legend
+  final_slope_plot <- (p_combined + (p_x50 / p_slope)) +
+    plot_layout(widths = c(2, 1), guides = "collect") &
+    theme(
+      legend.position = "top",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 14),
+      legend.key = element_rect(fill = "white", color = NA),
+      legend.background = element_blank(),         # <- No background
+      legend.box.background = element_blank()      # <- No box border
+    )
+  
+  # Save and print
   print(final_slope_plot)
   dir.create(dirname(save_slope_fig), recursive = TRUE, showWarnings = FALSE)
   ggsave(filename = save_slope_fig, plot = final_slope_plot, width = 10, height = 8, dpi = 300)
+  
   
   #### Coefficient Plot ####
   coeff_stats_list <- lapply(levels(data_clean$species), function(sp) {
@@ -461,7 +910,7 @@ plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope
          x = "",
          y = "Coefficient Value") +
     theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
       plot.background = element_rect(fill = "white", color = "white"),
       panel.background = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
@@ -483,251 +932,15 @@ plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope
   ggsave(filename = save_coeff_fig, plot = p_coeffs, device = "png", width = 10, height = 8, dpi = 300)
 }
 
+plot_time_series_and_correlation_combined(all_results_df,
+                                          "results/key_displays/time_series_Quantiles_PSI_TDiff_species.png")
+
+plot_yearly_mean_linear_coeffs(all_results_df, "results/key_displays/yearly_mean_linear_coeffs.png")
+
 plot_NDVI_Q_PSIbin_exp_slope_negPSI(all_results_df, 
                                     "results/key_displays/NDVI_Q_PSIbin_exp_coeff_negPSI.png",
                                     "results/key_displays/NDVI_Q_PSIbin_exp_slope_negPSI.png")
 
-plot_NDVI_Q_PSIbin_exp_slope_negPSI <- function(data, save_coeff_fig, save_slope_fig) {
-  
-  # Process data with your custom NDVI_PSIbin function and remove missing values
-  data <- NDVI_PSIbin(data)
-  data <- na.omit(data)
-  
-  # Load required libraries
-  library(ggplot2)
-  library(nlme)
-  library(dplyr)
-  library(tibble)
-  library(patchwork)
-  library(purrr)
-  library(car)      # for deltaMethod
-  library(tidyr)    # for pivot_longer
-  
-  # Identify the value column and order species; define the color palette
-  value_col <- "avg_value"
-  species_order <- c("Oak", "Beech", "Spruce", "Pine")
-  data$species <- factor(data$species, levels = species_order)
-  cb_palette <- c("Oak"   = "#E69F00",   # Orange
-                  "Beech" = "#0072B2",   # Deep blue
-                  "Spruce"= "#009E73",   # Bluish-green
-                  "Pine"  = "#F0E442")   # Yellow
-  
-  # Keep original (negative) soil water potential
-  data <- data %>% mutate(x = bin_median)
-  
-  # Clean data: remove rows with missing or non-finite values
-  data_clean <- data %>% filter(!is.na(.data[[value_col]]), is.finite(x))
-  
-  # Set threshold manually to 11.5 instead of computing the median from the data
-  threshold <- 11.5
-  
-  #### NONLINEAR MODELING PER SPECIES ####
-  start_list <- list(a = 5, b = 3, c = 0.001)
-  control_params <- nls.control(maxiter = 200, minFactor = 1e-4)
-  
-  nls_models <- nlsList(avg_value ~ a + b * exp(c * x) | species,
-                        data = data_clean,
-                        start = start_list,
-                        control = control_params)
-  print(summary(nls_models))
-  
-  # Extract coefficients
-  coef_df <- as.data.frame(coef(nls_models), optional = TRUE) %>% 
-    rownames_to_column(var = "species") %>%
-    filter(!is.na(a))
-  coef_df$species <- factor(coef_df$species, levels = species_order)
-  
-  # Compute x50 and slope at x50
-  coef_df <- coef_df %>%
-    mutate(x50 = ifelse((threshold - a) > 0 & b > 0,
-                        log((threshold - a)/b) / c,
-                        NA),
-           slope50 = c * (threshold - a))
-  
-  #### PANEL A: Observed Data and Fitted Curves ####
-  pred_list <- data_clean %>%
-    group_by(species) %>%
-    do({
-      sp <- unique(.$species)
-      x_seq <- seq(min(.$x, na.rm = TRUE), max(.$x, na.rm = TRUE), length.out = 100)
-      sp_model <- nls_models[[as.character(sp)]]
-      pred <- predict(sp_model, newdata = data.frame(x = x_seq))
-      data.frame(x = x_seq, pred = pred)
-    })
-  pred_all <- bind_rows(pred_list)
-  
-  # No transformation — use natural negative axis
-  x_scale <- scale_x_continuous()
-  
-  p_combined <- ggplot() +
-    geom_point(data = data_clean, aes(x = x, y = avg_value, color = species)) +
-    geom_line(data = pred_all, aes(x = x, y = pred, color = species), linewidth = 1) +
-    geom_hline(yintercept = threshold, linetype = "dashed", color = "black", linewidth = 1) +
-    annotate("text", x = min(data_clean$x), y = threshold, label = "median", 
-             hjust = -0.1, vjust = -0.3, fontface = "italic", size = 6) +
-    scale_color_manual(values = cb_palette, name = "") +
-    x_scale +
-    labs(x = "Soil Water Potential", y = "NDVI Quantiles", caption = "(a)") +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-      plot.caption = element_text(face = "bold", size = 16, hjust = 0.5),
-      plot.caption.position = "plot",
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      panel.border = element_blank(),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      legend.position = "none"
-      # Do not set legend.position here; it will be overridden in the combined plot
-    ) +
-    coord_cartesian(clip = "off")
-  
-  #### PANEL B: Bar Plot of x50 Values ####
-  p_x50 <- ggplot(coef_df, aes(x = species, y = x50, fill = species)) +
-    geom_bar(stat = "identity", width = 0.7) +
-    labs(x = "", y = "Soil Water Potential", caption = "(b)") +
-    scale_fill_manual(values = cb_palette, name = "") +
-    expand_limits(y = 0) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      axis.title.x = element_blank(),
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.position = "none",
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      plot.caption = element_text(face = "bold", size = 16, hjust = 0.5),
-      plot.caption.position = "plot"
-    )
-  
-  #### PANEL C: Bar Plot of Absolute Slope at x50 with Error Bars and Annotations ####
-  stats_list <- lapply(levels(data_clean$species), function(sp) {
-    mod <- nls_models[[sp]]
-    coefs <- coef(mod)
-    slope50_est <- -coefs["c"] * (threshold - coefs["a"])
-    
-    dm_result <- deltaMethod(mod, paste0("c*(a - ", threshold, ")"),
-                             parameterNames = c("a", "b", "c"))
-    se <- dm_result$SE
-    df_mod <- summary(mod)$df[2]
-    t_val <- slope50_est / se
-    p_val <- 2 * (1 - pt(abs(t_val), df_mod))
-    
-    df_sp <- data_clean %>% filter(species == sp)
-    fitted_vals <- predict(mod, newdata = df_sp)
-    r_squared <- 1 - sum((df_sp[[value_col]] - fitted_vals)^2) /
-      sum((df_sp[[value_col]] - mean(df_sp[[value_col]]))^2)
-    
-    tibble(species = sp,
-           slope50 = slope50_est,
-           slope_abs = abs(slope50_est),
-           se = se,
-           p_val = p_val,
-           r_squared = r_squared)
-  })
-  stats_df <- bind_rows(stats_list)
-  stats_df$species <- factor(stats_df$species, levels = species_order)
-  
-  stats_df <- stats_df %>%
-    mutate(label_text = ifelse(p_val < 0.05,
-                               sprintf("%.2f*", r_squared),
-                               sprintf("%.2f\np = %.2f", r_squared, p_val)))
-  
-  p_slope <- ggplot(stats_df, aes(x = species, y = slope_abs, fill = species)) +
-    geom_bar(stat = "identity", width = 0.7) +
-    geom_errorbar(aes(ymin = pmax(0, slope_abs - se), ymax = slope_abs + se), width = 0.2) +
-    geom_text(aes(y = slope_abs/2, label = label_text), color = "black", size = 5) +
-    labs(x = "", y = "Absolute Slope", caption = "(c)") +
-    scale_fill_manual(values = cb_palette, name = "") +
-    expand_limits(y = 0) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.position = "none",
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      plot.caption = element_text(face = "bold", size = 16, hjust = 0.5),
-      plot.caption.position = "plot"
-    )
-  
-  #### COMBINE PANELS ####
-  # Here, patchwork collects the legend (from p_combined) and we override the overall theme
-  # to place the legend at the bottom center of the final big plot.
-  final_slope_plot <- p_combined + (p_x50 / p_slope) +
-    plot_layout(widths = c(2, 1), guides = "collect") &
-    theme(legend.position = "bottom", legend.justification = "center")
-  
-  print(final_slope_plot)
-  dir.create(dirname(save_slope_fig), recursive = TRUE, showWarnings = FALSE)
-  ggsave(filename = save_slope_fig, plot = final_slope_plot, width = 10, height = 8, dpi = 300)
-  
-  #### Coefficient Plot ####
-  coeff_stats_list <- lapply(levels(data_clean$species), function(sp) {
-    mod <- nls_models[[sp]]
-    s <- summary(mod)$coefficients
-    df <- as.data.frame(s)
-    df$Coefficient <- rownames(df)
-    df$species <- sp
-    df
-  })
-  coeff_stats <- bind_rows(coeff_stats_list)
-  coeff_stats <- coeff_stats %>%
-    mutate(label = ifelse(`Pr(>|t|)` < 0.05,
-                          "*",
-                          sprintf("%.2f", `Pr(>|t|)`)))
-  
-  coeffs_long <- coef_df %>%
-    select(species, a, b, c) %>%
-    pivot_longer(cols = c("a", "b", "c"),
-                 names_to = "Coefficient",
-                 values_to = "Value")
-  
-  coeffs_long <- left_join(coeffs_long, coeff_stats %>% select(species, Coefficient, label),
-                           by = c("species", "Coefficient"))
-  coeffs_long$species <- factor(coeffs_long$species, levels = species_order)
-  
-  p_coeffs <- ggplot(coeffs_long, aes(x = species, y = Value, fill = species)) +
-    geom_bar(stat = "identity", position = "dodge") +
-    geom_text(aes(label = label, y = Value/2),
-              color = "black", size = 4,
-              position = position_dodge(width = 0.9)) +
-    scale_fill_manual(values = cb_palette, name = "") +
-    facet_wrap(~ Coefficient, scales = "free_y") +
-    labs(x = "", y = "Coefficient Value") +
-    theme(
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-      plot.subtitle = element_text(hjust = 0.5),
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      legend.position = "top",
-      legend.text = element_text(size = 14),
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      strip.text = element_text(face = "bold", size = 12),
-      plot.caption = element_text(face = "bold", size = 16, hjust = 0.5),
-      plot.caption.position = "plot"
-    )
-  
-  print(p_coeffs)
-  dir.create(dirname(save_coeff_fig), recursive = TRUE, showWarnings = FALSE)
-  ggsave(filename = save_coeff_fig, plot = p_coeffs, device = "png", width = 10, height = 8, dpi = 300)
-}
+plot_NDVI_Q_PSIbin_AIC_exp_linear(all_results_df,  "results/key_displays/NDVI_Q_PSIbin_AIC_exp_linear.png")
+plot_NDVI_Q_TDiffbin_AIC_exp_linear(all_results_df,  "results/key_displays/NDVI_Q_TDiffbin_AIC_exp_linear.png")
 

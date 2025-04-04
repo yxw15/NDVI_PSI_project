@@ -218,7 +218,7 @@ processRasterData <- function(species, var, var_names, cb_palette,
 setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
 
 # Define species and parameters
-species_all <- c("Oak", "Beech", "Spruce", "Pine")
+species_all <- c("Spruce", "Pine")
 parameter_all <- c("soil_water_potential", "transpiration_deficit", "Quantiles")
 
 # Variable names for parameters
