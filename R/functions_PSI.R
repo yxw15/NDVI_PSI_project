@@ -1087,6 +1087,8 @@ plot_NDVI_Q_PSIbin_log <- function(data, save_coeff_fig, save_slope_fig) {
                            by = c("species", "Coefficient")) %>%
     mutate(label = if_else(`Pr(>|t|)` < 0.05, "*", sprintf("%.2f", `Pr(>|t|)`)))
   
+  coeffs_long$species <- factor(coeffs_long$species, levels = species_order)
+  
   p_coeffs <- ggplot(coeffs_long, aes(x = species, y = Value, fill = species)) +
     geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
     geom_errorbar(aes(ymin = Value - `Std. Error`, ymax = Value + `Std. Error`), position = position_dodge(width = 0.9), width = 0.2) +
@@ -1108,7 +1110,9 @@ plot_NDVI_Q_PSIbin_log <- function(data, save_coeff_fig, save_slope_fig) {
       legend.position = "bottom",
       legend.text = element_text(size = 14),
       strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      strip.text = element_text(face = "bold", size = 12)
+      strip.text = element_text(face = "bold", size = 12),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
     )
   
   ggsave(filename = save_coeff_fig, plot = p_coeffs, width = 10, height = 8, dpi = 300)
