@@ -90,7 +90,7 @@ computeACFMatrix <- function(valid_vals, lag.max = 12) {
 }
 
 # Function 4: Bootstrap confidence intervals for each pixel's ACF
-bootstrapCI <- function(valid_vals, lag.max = 12, n_boot = 1000, alpha = 0.05) {
+bootstrapCI <- function(valid_vals, lag.max = 22, n_boot = 1000, alpha = 0.05) {
   message("Bootstrapping confidence intervals ...")
   set.seed(123)
   n_pixels <- nrow(valid_vals)
@@ -179,7 +179,7 @@ saveACFPlot <- function(plot, species, var_short, out_dir = "results_acf", width
 processRasterData <- function(species, var, var_names, cb_palette,
                               raster_base_path = "results",
                               out_dir = "results_acf",
-                              lag.max = 12,
+                              lag.max = 21,
                               n_boot = 1000,
                               alpha = 0.05) {
   var_short <- var_names[var]
@@ -218,13 +218,14 @@ processRasterData <- function(species, var, var_names, cb_palette,
 setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
 
 # Define species and parameters
-species_all <- c("Pine")
-parameter_all <- c("transpiration_deficit", "Quantiles")
+species_all <- c("Oak")
+parameter_all <- c("soil_water_potential")
 
 # Variable names for parameters
-var_names <- c("soil_water_potential" = "PSI",
-               "transpiration_deficit" = "TDiff",
-               "Quantiles" = "NDVI")
+var_names <- c("soil_water_potential" = "PSI")
+# var_names <- c("soil_water_potential" = "PSI",
+#                "transpiration_deficit" = "TDiff",
+#                "Quantiles" = "NDVI")
 
 # Color palette for species
 cb_palette <- c(

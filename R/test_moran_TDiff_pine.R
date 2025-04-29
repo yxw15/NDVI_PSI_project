@@ -18,9 +18,9 @@ load_data <- function(path, data_file) {
 
 # Define species and color palette
 get_species_palette <- function() {
-  cat("Defining species list and color palette for Oak...\n")
-  species_list <- "Oak"
-  cb_palette <- c("Oak" = "#E69F00")
+  cat("Defining species list and color palette for Pine...\n")
+  species_list <- "Pine"
+  cb_palette <- c("Pine" = "#009E73")
   cat("Species list and color palette defined.\n\n")
   list(species_list = species_list, cb_palette = cb_palette)
 }
@@ -130,7 +130,7 @@ generate_plot <- function(data, variable, palette, theme) {
     theme
   
   print(plot)
-  output_file <- paste0("results_moran/Oak_", variable, "_moran_I_vs_distance.png")
+  output_file <- paste0("results_moran/Pine_", variable, "_moran_I_vs_distance.png")
   cat("  Saving plot to ", output_file, "...\n", sep = "")
   ggsave(output_file, plot, width = 10, height = 6, dpi = 300)
   cat("  Plot saved.\n\n")
@@ -138,7 +138,7 @@ generate_plot <- function(data, variable, palette, theme) {
 
 # Save results to CSV
 save_results <- function(data, variable) {
-  file <- paste0("results_moran/data/Oak_", variable, "_moran_data.csv")
+  file <- paste0("results_moran/data/Pine_", variable, "_moran_data.csv")
   cat("  Saving intermediate data to ", file, "...\n", sep = "")
   write.csv(data, file = file, row.names = FALSE)
   cat("  Data saved.\n")

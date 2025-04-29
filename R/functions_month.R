@@ -30,8 +30,8 @@ plot_time_series_Quantiles_PSI_TDiff_year_month_species <- function(data, figure
       transpiration_deficit = mean(transpiration_deficit, na.rm = TRUE)
     ) %>%
     ungroup() %>%
-    # Create a date variable (assuming the 15th day of each month)
-    mutate(date = as.Date(paste(year, month, "15", sep = "-"), format = "%Y-%B-%d"))
+    # Create a date variable (assuming the 13th day of each month)
+    mutate(date = as.Date(paste(year, month, "13", sep = "-"), format = "%Y-%B-%d"))
   
   # Define a common x-axis scale with breaks for every year
   common_x_scale <- scale_x_date(
@@ -51,7 +51,7 @@ plot_time_series_Quantiles_PSI_TDiff_year_month_species <- function(data, figure
     panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
     panel.grid.major.x = element_blank(),
     panel.grid.minor.x = element_blank(),
-    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.5),
+    panel.grid.major.y = element_line(color = "gray90", linewidth = 0.3),
     panel.grid.minor.y = element_blank()
   )
   
@@ -87,12 +87,12 @@ plot_time_series_Quantiles_PSI_TDiff_year_month_species <- function(data, figure
   final_plot <- grid.arrange(plot_a, plot_b, plot_c, ncol = 1)
   
   # Save the final plot to the specified output file with high resolution
-  ggsave(filename = figure_output, plot = final_plot, width = 20, height = 15, dpi = 300)
+  ggsave(filename = figure_output, plot = final_plot, width = 20, height = 13, dpi = 300)
   
   return(final_plot)
 }
 
-NDVI_PSIbin_month <- function(df, bin_width = 100) {
+NDVI_PSIbin_month <- function(df, bin_width = 50) {
   library(dplyr)
   
   # Identify the correct column dynamically (here we use "Quantiles")
@@ -106,6 +106,11 @@ NDVI_PSIbin_month <- function(df, bin_width = 100) {
   df <- df %>%
     mutate(PSI_bin = cut(soil_water_potential, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
   
+  # Count total pixels per species
+  species_totals <- df %>%
+    group_by(species) %>%
+    summarise(total_count = n(), .groups = 'drop')
+  
   # Compute mean for the chosen value column per species, per month, and per PSI_bin
   meanNDVI_PSIbin_species <- df %>%
     group_by(species, month, PSI_bin) %>%
@@ -114,17 +119,23 @@ NDVI_PSIbin_month <- function(df, bin_width = 100) {
       count = n(),
       .groups = 'drop'
     ) %>%
-    filter(count >= 2000) %>%  # Only keep bins with at least 2000 observations
-    mutate(bin_median = sapply(as.character(PSI_bin), function(bin_label) {
-      nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
-      mean(nums)
-    })) %>%
+    left_join(species_totals, by = "species") %>%
+    mutate(
+      percent_of_total = (count / total_count) * 100
+    ) %>%
+    filter(percent_of_total >= 0.1) %>%  # Only keep bins >= 0.1% of total pixels per species
+    mutate(
+      bin_median = sapply(as.character(PSI_bin), function(bin_label) {
+        nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
+        mean(nums)
+      })
+    ) %>%
     select(species, month, PSI_bin, bin_median, avg_value)
   
   return(meanNDVI_PSIbin_species)
 }
 
-plot_Quantiles_PSIbin_month_species <- function(data, bin_width = 100, figure_output = NULL) {
+plot_Quantiles_PSIbin_month_species <- function(data, bin_width = 50, figure_output = NULL) {
   library(ggplot2)
   library(dplyr)
   library(viridis)  # For color-blind-friendly colors
@@ -160,14 +171,14 @@ plot_Quantiles_PSIbin_month_species <- function(data, bin_width = 100, figure_ou
       plot.background = element_rect(fill = "white", color = "white"),
       panel.background = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.title = element_text(hjust = 0.3, size = 18, face = "bold", color = "black"),
       axis.title = element_text(face = "bold"),
       axis.text = element_text(color = "black"),
       panel.border = element_rect(color = NA, fill = NA, linewidth = 0),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       legend.position = "top",
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.3),
       strip.text = element_text(face = "bold", size = 12)
     )
   
@@ -179,7 +190,7 @@ plot_Quantiles_PSIbin_month_species <- function(data, bin_width = 100, figure_ou
   return(p)
 }
 
-NDVI_TDiffbin_month <- function(df, bin_width = 5) {
+NDVI_TDiffbin_month <- function(df, bin_width = 3) {
   library(dplyr)
   
   # Identify the correct column dynamically (either "Quantiles" or "Proportions")
@@ -193,6 +204,11 @@ NDVI_TDiffbin_month <- function(df, bin_width = 5) {
   df <- df %>%
     mutate(TDiff_bin = cut(transpiration_deficit, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
   
+  # Count total pixels per species
+  species_totals <- df %>%
+    group_by(species) %>%
+    summarise(total_count = n(), .groups = 'drop')
+  
   # Compute mean for the chosen value column per species, per month, and per TDiff_bin
   meanNDVI_TDiff_species <- df %>%
     group_by(species, month, TDiff_bin) %>%
@@ -201,17 +217,23 @@ NDVI_TDiffbin_month <- function(df, bin_width = 5) {
       count = n(),
       .groups = 'drop'
     ) %>%
-    filter(count >= 2000) %>%  # Only keep bins with at least 2000 observations
-    mutate(bin_median = sapply(as.character(TDiff_bin), function(bin_label) {
-      nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
-      mean(nums)
-    })) %>%
+    left_join(species_totals, by = "species") %>%
+    mutate(
+      percent_of_total = (count / total_count) * 100
+    ) %>%
+    filter(percent_of_total >= 0.01) %>%  # Keep bins >= 0.01% of species' total pixels
+    mutate(
+      bin_median = sapply(as.character(TDiff_bin), function(bin_label) {
+        nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
+        mean(nums)
+      })
+    ) %>%
     select(species, month, TDiff_bin, bin_median, avg_value)
   
   return(meanNDVI_TDiff_species)
 }
 
-plot_Quantiles_TDiffbin_month_species <- function(data, bin_width = 5, figure_output = NULL) {
+plot_Quantiles_TDiffbin_month_species <- function(data, bin_width = 3, figure_output = NULL) {
   library(ggplot2)
   library(dplyr)
   library(viridis)  # For color-blind-friendly colors
@@ -247,14 +269,14 @@ plot_Quantiles_TDiffbin_month_species <- function(data, bin_width = 5, figure_ou
       plot.background = element_rect(fill = "white", color = "white"),
       panel.background = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.title = element_text(hjust = 0.3, size = 18, face = "bold", color = "black"),
       axis.title = element_text(face = "bold", size = 16),
       axis.text = element_text(color = "black", size = 14),
       panel.border = element_rect(color = NA, fill = NA, linewidth = 0),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       legend.position = "top",
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.3),
       strip.text = element_text(face = "bold", size = 12)
     )
   
@@ -266,41 +288,51 @@ plot_Quantiles_TDiffbin_month_species <- function(data, bin_width = 5, figure_ou
   return(p)
 }
 
-TDiff_PSIbin_month <- function(df, bin_width = 100) {
+TDiff_PSIbin_month <- function(df, bin_width = 50) {
   library(dplyr)
   
-  # Identify the correct column dynamically (here we use "transpiration_deficit")
+  # Identify the correct value column
   value_column <- "transpiration_deficit"
   
-  # Define bin breaks dynamically based on soil water potential range
+  # Define bin breaks based on soil water potential range
   psi_min <- floor(min(df$soil_water_potential, na.rm = TRUE))
   psi_max <- ceiling(max(df$soil_water_potential, na.rm = TRUE))
   bin_breaks <- seq(psi_min, psi_max, by = bin_width)
   
+  # Bin the soil water potential values
   df <- df %>%
     mutate(PSI_bin = cut(soil_water_potential, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
   
-  # Compute mean for transpiration deficit per species, per month, and per PSI_bin
+  # Total pixel count per species
+  species_totals <- df %>%
+    group_by(species) %>%
+    summarise(total_pixels = n(), .groups = "drop")
+  
+  # Compute mean transpiration deficit per species, month, and PSI_bin
   meanTDiff_PSIbin_species <- df %>%
     group_by(species, month, PSI_bin) %>%
     summarise(
       avg_value = mean(.data[[value_column]], na.rm = TRUE),
       count = n(),
-      .groups = 'drop'
+      .groups = "drop"
     ) %>%
-    filter(count >= 2000) %>%  # Only keep bins with at least 2000 observations
+    left_join(species_totals, by = "species") %>%
+    mutate(
+      percent_of_total = count / total_pixels
+    ) %>%
+    filter(percent_of_total >= 0.001) %>%  # Keep only bins with ≥ 0.1% of total pixels
     rowwise() %>%
     mutate(bin_median = ifelse(!is.na(PSI_bin),
                                mean(as.numeric(unlist(strsplit(gsub("\\[|\\]|\\(|\\)", "", as.character(PSI_bin)), ",")))),
-                               NA_real_)) %>% # Ensure numeric conversion
+                               NA_real_)) %>%
     ungroup() %>%
-    filter(!is.na(bin_median)) %>%  # Remove rows where bin_median couldn't be calculated
+    filter(!is.na(bin_median)) %>%
     select(species, month, PSI_bin, bin_median, avg_value)
   
   return(meanTDiff_PSIbin_species)
 }
 
-plot_TDiff_PSIbin_month_species <- function(data, bin_width = 100, figure_output = NULL) {
+plot_TDiff_PSIbin_month_species <- function(data, bin_width = 50, figure_output = NULL) {
   library(ggplot2)
   library(dplyr)
   library(viridis)  # For color-blind-friendly colors
@@ -341,14 +373,14 @@ plot_TDiff_PSIbin_month_species <- function(data, bin_width = 100, figure_output
       plot.background = element_rect(fill = "white", color = "white"),
       panel.background = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.title = element_text(hjust = 0.3, size = 18, face = "bold", color = "black"),
       axis.title = element_text(face = "bold", size = 16),
       axis.text = element_text(color = "black", size = 14),
       panel.border = element_rect(color = NA, fill = NA, linewidth = 0),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       legend.position = "top",
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.3),
       strip.text = element_text(face = "bold", size = 12)
     )
   
@@ -360,9 +392,7 @@ plot_TDiff_PSIbin_month_species <- function(data, bin_width = 100, figure_output
   return(p)
 }
 
-plot_Quantiles_PSIbin_month_species_linear_agg <- function(data, bin_width = 100,
-                                                           figure_output = NULL,
-                                                           figure_output2 = NULL) {
+plot_Quantiles_PSIbin_month_species_linear_agg <- function(data, bin_width = 50,figure_output = NULL, figure_output2 = NULL) {
   # Load required libraries
   library(ggplot2)
   library(dplyr)
@@ -401,10 +431,10 @@ plot_Quantiles_PSIbin_month_species_linear_agg <- function(data, bin_width = 100
       plot.background    = element_rect(fill = "white", color = "white"),
       panel.background   = element_rect(fill = "white"),
       legend.background  = element_rect(fill = "white", color = "white"),
-      plot.title         = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.title         = element_text(hjust = 0.3, size = 18, face = "bold", color = "black"),
       axis.title         = element_text(face = "bold"),
       axis.text          = element_text(color = "black"),
-      strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.3),
       strip.text         = element_text(face = "bold", size = 12),
       legend.position    = "top"
     )
@@ -440,10 +470,10 @@ plot_Quantiles_PSIbin_month_species_linear_agg <- function(data, bin_width = 100
       plot.background    = element_rect(fill = "white", color = "white"),
       panel.background   = element_rect(fill = "white"),
       legend.background  = element_rect(fill = "white", color = "white"),
-      plot.title         = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.title         = element_text(hjust = 0.3, size = 18, face = "bold", color = "black"),
       axis.title         = element_text(face = "bold"),
       axis.text          = element_text(color = "black"),
-      strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.3),
       strip.text         = element_text(face = "bold", size = 12),
       legend.position    = "top"
     )
@@ -460,9 +490,7 @@ plot_Quantiles_PSIbin_month_species_linear_agg <- function(data, bin_width = 100
   return(list(linear_fit_plot = p1, regression_parameters_barplot = p2))
 }
 
-plot_Quantiles_PSIbin_month_species_linear_orig <- function(data,
-                                                            figure_output = NULL,
-                                                            figure_output2 = NULL) {
+plot_Quantiles_PSIbin_month_species_linear_orig <- function(data, figure_output = NULL, figure_output2 = NULL) {
   # Load required libraries
   library(ggplot2)
   library(dplyr)
@@ -495,10 +523,10 @@ plot_Quantiles_PSIbin_month_species_linear_orig <- function(data,
       plot.background   = element_rect(fill = "white", color = "white"),
       panel.background  = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
-      plot.title        = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.title        = element_text(hjust = 0.3, size = 18, face = "bold", color = "black"),
       axis.title        = element_text(face = "bold"),
       axis.text         = element_text(color = "black"),
-      strip.background  = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.background  = element_rect(fill = "white", color = "black", linewidth = 0.3),
       strip.text        = element_text(face = "bold", size = 12),
       legend.position   = "top"
     )
@@ -533,10 +561,10 @@ plot_Quantiles_PSIbin_month_species_linear_orig <- function(data,
       plot.background   = element_rect(fill = "white", color = "white"),
       panel.background  = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
-      plot.title        = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.title        = element_text(hjust = 0.3, size = 18, face = "bold", color = "black"),
       axis.title        = element_text(face = "bold"),
       axis.text         = element_text(color = "black"),
-      strip.background  = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.background  = element_rect(fill = "white", color = "black", linewidth = 0.3),
       strip.text        = element_text(face = "bold", size = 12),
       legend.position   = "top"
     )
@@ -553,7 +581,7 @@ plot_Quantiles_PSIbin_month_species_linear_orig <- function(data,
   return(list(linear_fit_plot = p1, regression_parameters_barplot = p2))
 }
 
-plot_TDiff_PSIbin_month_species_original <- function(data, bin_width = 100, figure_output = NULL) {
+plot_TDiff_PSIbin_month_species_original <- function(data, bin_width = 50, figure_output = NULL) {
   library(ggplot2)
   library(dplyr)
   library(viridis)  # For color-blind-friendly colors
@@ -592,14 +620,14 @@ plot_TDiff_PSIbin_month_species_original <- function(data, bin_width = 100, figu
       plot.background = element_rect(fill = "white", color = "white"),
       panel.background = element_rect(fill = "white"),
       legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.title = element_text(hjust = 0.3, size = 18, face = "bold", color = "black"),
       axis.title = element_text(face = "bold", size = 16),
       axis.text = element_text(color = "black", size = 14),
       panel.border = element_rect(color = NA, fill = NA, linewidth = 0),
       panel.grid.major = element_blank(),
       panel.grid.minor = element_blank(),
       legend.position = "top",
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.3),
       strip.text = element_text(face = "bold", size = 12)
     )
   

@@ -2262,4 +2262,151 @@ plot_correlation_NDVI_PSI_TDiff_species_corr <- function(df_all, out_dir) {
   }
 }
 
-
+plot_time_series_and_correlation_combined <- function(df_all, output_path) {
+  library(ggplot2)
+  library(patchwork)
+  library(dplyr)
+  library(cowplot)  # For get_legend and plot_grid
+  
+  # Get species-level averaged data
+  df_species <- df_average_year_species(df_all)
+  
+  # Set species order and assign factor levels
+  species_order <- c("Oak", "Beech", "Spruce", "Pine")
+  df_species$species <- factor(df_species$species, levels = species_order)
+  
+  # Define the color palette for the species
+  cb_palette <- c("Oak"   = "#E69F00", 
+                  "Beech" = "#0072B2",
+                  "Spruce"= "#009E73", 
+                  "Pine"  = "#F0E442")
+  
+  # Determine NDVI column and label
+  ndvi_column <- if ("avg_quantile" %in% names(df_species)) {
+    "avg_quantile"
+  } else if ("avg_proportion" %in% names(df_species)) {
+    "avg_proportion"
+  } else {
+    stop("Neither avg_quantile nor avg_proportion column found in species data.")
+  }
+  
+  ndvi_label <- if (ndvi_column == "avg_quantile") {
+    "NDVI quantiles"
+  } else {
+    "NDVI proportions"
+  }
+  
+  # Define a custom theme with consistent text sizes
+  custom_theme <- theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 0, hjust = 0.5, size = 14),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      legend.text = element_text(color = "black", size = 14),
+      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.caption = element_text(face = "bold", size = 16, hjust = 0.5),
+      plot.caption.position = "plot",
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
+      panel.border = element_blank(),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+  
+  # Create an x-axis scale that shows breaks every 2 years from 2003 to 2024
+  x_scale <- scale_x_continuous(breaks = seq(2003, 2024, by = 2), limits = c(2003, 2024))
+  
+  ### TIME SERIES PLOTS ###
+  # Panel (a): NDVI Time Series – keep the legend (with horizontal layout) for extraction later
+  p1 <- ggplot(df_species, aes(x = as.numeric(year), y = .data[[ndvi_column]], color = species)) +
+    geom_point(size = 3, alpha = 0.7) +
+    geom_line() +
+    labs(title = "", x = "", y = expression(atop(bold("NDVI quantiles"), bold("(rank)"))), color = "Species") +
+    scale_color_manual(values = cb_palette, name = "", guide = guide_legend(nrow = 1)) +
+    custom_theme +
+    labs(caption = "(a)") +
+    theme(legend.position = "bottom", legend.direction = "horizontal") +
+    x_scale
+  
+  # Panel (b): soil water potential Time Series – remove legend
+  p2 <- ggplot(df_species, aes(x = as.numeric(year), y = avg_psi, color = species)) +
+    geom_point(size = 3, alpha = 0.7) +
+    geom_line() +
+    labs(title = "", x = "", y = expression(atop(bold("soil water potential"), bold("(kPa)"))), color = "Species") +
+    scale_color_manual(values = cb_palette, name = "") +
+    custom_theme +
+    guides(color = "none") +
+    labs(caption = "(b)") +
+    x_scale
+  
+  # Panel (c): transpiration deficit Time Series – remove legend
+  p3 <- ggplot(df_species, aes(x = as.numeric(year), y = avg_tdiff, color = species)) +
+    geom_point(size = 3, alpha = 0.7) +
+    geom_line() +
+    labs(title = "", x = "", y = expression(atop(bold("transpiration deficit"), bold("(mm)"))), color = "Species") +
+    scale_color_manual(values = cb_palette, name = "") +
+    custom_theme +
+    guides(color = "none") +
+    labs(caption = "(c)") +
+    x_scale
+  
+  # Combine time series panels vertically
+  ts_plot <- p1 / p2 / p3
+  
+  ### CORRELATION PLOTS ###
+  # Compute correlations for panel (d): NDVI vs soil water potential
+  annotations_d <- df_species %>%
+    group_by(species) %>%
+    summarize(corr = round(cor(avg_psi, .data[[ndvi_column]], use = "complete.obs"), 2))
+  
+  # Compute correlations for panel (e): NDVI vs transpiration deficit
+  annotations_e <- df_species %>%
+    group_by(species) %>%
+    summarize(corr = round(cor(avg_tdiff, .data[[ndvi_column]], use = "complete.obs"), 2))
+  
+  # Create annotation text (ordered by species_order)
+  text_d <- paste0(species_order, ": r = ", 
+                   annotations_d$corr[match(species_order, annotations_d$species)],
+                   collapse = "\n")
+  
+  text_e <- paste0(species_order, ": r = ", 
+                   annotations_e$corr[match(species_order, annotations_e$species)],
+                   collapse = "\n")
+  
+  # Panel (d): NDVI vs soil water potential – remove legend
+  p_d <- ggplot(df_species, aes(x = avg_psi, y = .data[[ndvi_column]], color = species)) +
+    geom_point(size = 3, alpha = 0.7) +
+    geom_smooth(method = "lm", se = FALSE) +
+    labs(x = "soil water potential (kPa)", y = expression(atop(bold("NDVI quantiles"), bold("(rank)"))), caption = "(d)", color = "Species") +
+    scale_color_manual(values = cb_palette, name = "") +
+    custom_theme +
+    guides(color = "none") +
+    annotate("text", x = -Inf, y = Inf, label = text_d, hjust = 0, vjust = 1, size = 5, color = "black")
+  
+  # Panel (e): NDVI vs transpiration deficit – remove legend
+  p_e <- ggplot(df_species, aes(x = avg_tdiff, y = .data[[ndvi_column]], color = species)) +
+    geom_point(size = 3, alpha = 0.7) +
+    geom_smooth(method = "lm", se = FALSE) +
+    labs(x = "transpiration deficit (mm)", y = "", caption = "(e)", color = "Species") +
+    scale_color_manual(values = cb_palette, name = "") +
+    custom_theme +
+    guides(color = "none") +
+    annotate("text", x = Inf, y = Inf, label = text_e, hjust = 1, vjust = 1, size = 5, color = "black")
+  
+  # Combine correlation panels side-by-side
+  corr_plot <- p_d | p_e
+  
+  # Combine time series on top and correlations on bottom, and remove legends from this combination
+  combined_main <- ts_plot / corr_plot
+  combined_main <- combined_main & theme(legend.position = "top")
+  
+  # Extract the legend from p1 (now a single horizontal guide)
+  legend <- suppressWarnings(cowplot::get_legend(p1))
+  
+  # Combine the main plot and the legend with the legend underneath
+  final_plot <- cowplot::plot_grid(combined_main, legend, ncol = 1, rel_heights = c(1, 0.1))
+  
+  print(final_plot)
+  ggsave(filename = output_path, plot = final_plot, width = 12, height = 14, dpi = 300)
+}

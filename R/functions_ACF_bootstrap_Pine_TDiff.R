@@ -219,7 +219,7 @@ setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project"
 
 # Define species and parameters
 species_all <- c("Pine")
-parameter_all <- c("transpiration_deficit", "Quantiles")
+parameter_all <- c("transpiration_deficit")
 
 # Variable names for parameters
 var_names <- c("soil_water_potential" = "PSI",
