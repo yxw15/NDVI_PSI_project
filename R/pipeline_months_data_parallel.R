@@ -1,6 +1,6 @@
 # -----------------------------------------------------------------------------
-# Title: NDVI, PSI, and TDiff Multi-Depth Processing Script (Parallelized) 🚀
-# Description: Adds parallel processing with mclapply and fun stickers in messages 🎉
+# Title: NDVI, PSI, and TDiff Multi-Depth Processing Script (Parallelized & Robust) 🚀
+# Description: Adds parallel processing with mclapply, robust missing-data handling, always rewrite final results, and fun stickers 🎉
 # -----------------------------------------------------------------------------
 
 # Load required libraries
@@ -20,7 +20,7 @@ source("R/functions_TDiff.R")
 
 # Define global parameters
 start_date <- "2003-01-01"
-years <- 2003:2024
+years      <- 2003:2024
 
 # Detect number of cores and reserve one for the OS
 n_cores <- max(1, detectCores() - 1)
@@ -71,14 +71,19 @@ ensure_directory <- function(dir_path) {
 #   Processes PSI & TDiff rasters, combines with NDVI, with skip logic and stickers 🌿
 # -----------------------------------------------------------------------------
 process_species <- function(species_name, species_paths, NDVI_file, month_day, depth_val, month_name) {
-  message(sprintf("🌱 [%s | Depth=%dcm] -> %s: Starting work...", month_name, depth_val, species_name))
+  # Explicit running message
+  message(sprintf("🔍 Processing species '%s' for month '%s' at depth %dcm...", 
+                  species_name, month_name, depth_val))
+  # Detailed start message
+  message(sprintf("🌱 [%s | Depth=%dcm] -> %s: Starting work...", 
+                  month_name, depth_val, species_name))
   
   # Prepare output
   output_dir <- file.path(sprintf("results_monthly_%d", depth_val), month_name, species_name)
   ensure_directory(output_dir)
   save_path <- file.path(output_dir, sprintf("NDVI_PSI_TDiff_%s_depth%d.RData", gsub("-", "", month_day), depth_val))
   
-  # Skip if exists
+  # Skip if exists for efficiency
   if (file.exists(save_path)) {
     message(sprintf("⏭️ Skipping %s (already done)! 👍", species_name))
     load(save_path)  # loads species_df
@@ -117,79 +122,80 @@ process_species <- function(species_name, species_paths, NDVI_file, month_day, d
 
 # -----------------------------------------------------------------------------
 # Function: process_month
-#   Processes all species for a given month in parallel 🗓️
+#   Processes all species for a given month in parallel, handling missing files 🗓️
 # -----------------------------------------------------------------------------
 process_month <- function(month_name, depth_val) {
+  # Month start message
+  message(sprintf("🔖 Starting month '%s' at depth %dcm...", month_name, depth_val))
   cfg <- months_config[[month_name]]
-  message(sprintf("🌸 [%s | Depth=%dcm] Month start 🌸", month_name, depth_val))
   
-  # Prepare monthly output
+  species_dfs <- lapply(names(species_config), function(species) {
+    sp <- species_config[[species]]
+    file <- file.path(
+      sprintf("results_monthly_%d", depth_val),
+      month_name, species,
+      sprintf("NDVI_PSI_TDiff_%s_depth%d.RData",
+              gsub("-", "", cfg$month_day), depth_val)
+    )
+    if (file.exists(file)) {
+      message(sprintf("⏭️ [%s | %s] already done – loading…", month_name, species))
+      e <- new.env()
+      load(file, envir = e)
+      return(e$species_df)
+    } else {
+      return(process_species(species, sp, cfg$NDVI, cfg$month_day, depth_val, month_name))
+    }
+  })
+  
+  month_df <- bind_rows(species_dfs) %>% mutate(month = month_name, depth = depth_val)
+  
+  # Save month summary (always overwrite)
   out_dir <- file.path("results", "Data", sprintf("depth_%d", depth_val))
   ensure_directory(out_dir)
-  out_file <- file.path(out_dir, sprintf("AllSpecies_%s_depth%d.RData", month_name, depth_val))
-  
-  # Skip if exists
-  if (file.exists(out_file)) {
-    message(sprintf("⏭️ Skipping month %s (already done)! 👍", month_name))
-    load(out_file)  # loads month_df
-    return(month_df)
+  month_file <- file.path(out_dir, sprintf("AllSpecies_%s_depth%d.RData",
+                                           month_name, depth_val))
+  if (file.exists(month_file)) {
+    file.remove(month_file)
+    message(sprintf("🗑️ Removed existing month summary for %s to rewrite", month_name))
   }
-  
-  # Parallel species processing
-  message("🚀 Launching species processing in parallel...")
-  month_list <- mclapply(names(species_config), function(species) {
-    sp <- species_config[[species]]
-    process_species(species, sp, cfg$NDVI, cfg$month_day, depth_val, month_name)
-  }, mc.cores = n_cores)
-  
-  month_df <- bind_rows(month_list) %>% mutate(month = month_name)
-  save(month_df, file = out_file)
-  message(sprintf("🎉 Month data saved: %s", basename(out_file)))
+  save(month_df, file = month_file)
+  message(sprintf("🎉 Completed month '%s' at depth %dcm", month_name, depth_val))
   return(month_df)
 }
 
+# ----------------------------------------------------------------------------
+# Main loop: iterate over depths and months (with robust missing-data handling) 🌎
 # -----------------------------------------------------------------------------
-# Main loop: iterate over depths and months in parallel 🌎
-# -----------------------------------------------------------------------------
-depths <- c(150)
+depths <- c(100, 150)
 
 for (d in depths) {
   message(sprintf("🧭 ===== Depth = %d cm RUN START ===== 🧭", d))
   
-  # Raw combined filename
-  raw_dir <- file.path("results", "Data")
-  ensure_directory(raw_dir)
-  raw_file <- file.path(raw_dir, sprintf("AllSpecies_AllMonths_depth%d.RData", d))
+  all_months <- mclapply(names(months_config), function(month_name) {
+    message(sprintf("🚀 Processing month '%s' at depth %dcm...", month_name, d))
+    process_month(month_name, d)
+  }, mc.cores = n_cores)
   
-  if (file.exists(raw_file)) {
-    message(sprintf("⏭️ Skipping full combined for depth %d (already exists)! 👍", d))
-    load(raw_file)  # loads 'combined'
-  } else {
-    # Parallel month processing
-    message("🚀 Starting month-level parallel processing...")
-    all_months <- mclapply(names(months_config), process_month, depth_val = d, mc.cores = n_cores)
-    combined <- bind_rows(all_months) %>% mutate(depth = d)
-    save(combined, file = raw_file)
-    message(sprintf("🎉 Raw combined saved: %s", basename(raw_file)))
-  }
+  # Combine all months into one table
+  combined <- bind_rows(all_months)
   
   # Standardize final dataframe
   final_df <- combined %>%
-    rename(
-      soil_water_potential = psi,
-      transpiration_deficit = tdiff,
-      quantiles = ndvi_quantile
-    ) %>%
     select(year, month, species,
            soil_water_potential,
            transpiration_deficit,
-           quantiles, x, y)
+           Quantiles, x, y, depth)
   
-  # Assign and save
-  assign(sprintf("final_df_depth%d", d), final_df)
+  # Save final object (always overwrite)
+  raw_dir <- file.path("results", "Data")
+  ensure_directory(raw_dir)
   final_file <- file.path(raw_dir, sprintf("final_df_depth%d.RData", d))
-  save(list = sprintf("final_df_depth%d", d), file = final_file)
-  message(sprintf("🥳 Standardized final_df_depth%d saved: %s", d, basename(final_file)))
+  if (file.exists(final_file)) {
+    file.remove(final_file)
+    message(sprintf("🗑️ Removed existing final_df_depth%d to rewrite", d))
+  }
+  save(final_df, file = final_file)
+  message(sprintf("🥳 final_df_depth%d saved: %s", d, basename(final_file)))
   
   message(sprintf("🧭 ===== Depth = %d cm RUN COMPLETE ===== 🧭\n", d))
 }
