@@ -16,12 +16,12 @@ process_NDVI_PSI_TDiff_species_year <- function(NDVI_file, species_name, mask_fi
   NDVI_year <- NDVI_raster[[year - 2003 + 1]]
   
   # Load and project PSI raster for the specific year
-  PSI_folder <- sprintf("results/%s/PSI", species_name)
+  PSI_folder <- output_path
   PSI_year <- rast(sprintf("%s/psi_%d.tif", PSI_folder, year))
   PSI_year <- project(PSI_year, species_mask)
   
   # Load and project TDiff raster for the specific year
-  TDiff_folder <- sprintf("results/%s/TDiff", species_name)
+  TDiff_folder <- output_path
   TDiff_year <- rast(sprintf("%s/tdiff_%d.tif", TDiff_folder, year))
   TDiff_year <- project(TDiff_year, species_mask)
   
@@ -35,20 +35,10 @@ process_NDVI_PSI_TDiff_species_year <- function(NDVI_file, species_name, mask_fi
   PSI_masked[is.na(species_mask[])] <- NA
   TDiff_masked[is.na(species_mask[])] <- NA
   
-  # Define separate output folders for NDVI and PSI masks
-  NDVI_mask_folder <- sprintf("results/%s/NDVI_mask", species_name)
-  PSI_mask_folder <- sprintf("results/%s/PSI_mask", species_name)
-  TDiff_mask_folder <- sprintf("results/%s/TDiff_mask", species_name)
-  
-  # Ensure the output directories exist
-  if (!dir.exists(NDVI_mask_folder)) dir.create(NDVI_mask_folder, recursive = TRUE)
-  if (!dir.exists(PSI_mask_folder)) dir.create(PSI_mask_folder, recursive = TRUE)
-  if (!dir.exists(TDiff_mask_folder)) dir.create(TDiff_mask_folder, recursive = TRUE)
-  
   # Save the rasters in their respective folders
-  writeRaster(NDVI_masked, sprintf("%s/NDVI_%d_mask.tif", NDVI_mask_folder, year), overwrite = TRUE)
-  writeRaster(PSI_masked, sprintf("%s/PSI_%d_mask.tif", PSI_mask_folder, year), overwrite = TRUE)
-  writeRaster(TDiff_masked, sprintf("%s/TDiff_%d_mask.tif", TDiff_mask_folder, year), overwrite = TRUE)
+  writeRaster(NDVI_masked, sprintf("%s/NDVI_%d_mask.tif", output_path, year), overwrite = TRUE)
+  writeRaster(PSI_masked, sprintf("%s/PSI_%d_mask.tif", output_path, year), overwrite = TRUE)
+  writeRaster(TDiff_masked, sprintf("%s/TDiff_%d_mask.tif", output_path, year), overwrite = TRUE)
   
   # Combine NDVI and PSI and TDiff into a data frame
   NDVI_PSI_TDiff <- c(NDVI_masked, PSI_masked, TDiff_masked)

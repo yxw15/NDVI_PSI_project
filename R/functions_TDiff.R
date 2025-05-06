@@ -39,18 +39,18 @@ save_tdiff_df <- function(tdiff_melted, file_path) {
   write.csv(tdiff_melted, file_path, row.names = FALSE)
 }
 
-filter_tdiff <- function(tdiff_melted, month_day, depth) {
+filter_tdiff <- function(tdiff_melted, month_day) {
   tdiff_melted <- na.omit(tdiff_melted)
   tdiff_filter <- subset(tdiff_melted, 
-                         format(as.Date(time), "%m-%d") == month_day & depth == depth)
+                         format(as.Date(time), "%m-%d") == month_day)
   return(tdiff_filter)
 }
 
-save_tdiff_raster <- function(tdiff_melted, month_day, depth, output_dir) {
+save_tdiff_raster <- function(tdiff_melted, month_day, output_dir) {
   if (!dir.exists(output_dir)) {
     dir.create(output_dir, recursive = TRUE)
   }
-  tdiff <- filter_tdiff(tdiff_melted, month_day, depth)
+  tdiff <- filter_tdiff(tdiff_melted, month_day)
   tdiff$time <- as.Date(tdiff$time, format = "%Y-%m-%d")
   years <- 2003:2024
   for (year in years) {

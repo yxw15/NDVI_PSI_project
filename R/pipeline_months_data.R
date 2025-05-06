@@ -38,7 +38,7 @@ months_config <- list(
   April  = list(month_day = "04-23", NDVI = "../WZMAllDOYs/Quantiles_113.nc"),
   May    = list(month_day = "05-25", NDVI = "../WZMAllDOYs/Quantiles_145.nc"),
   June   = list(month_day = "06-26", NDVI = "../WZMAllDOYs/Quantiles_177.nc"),
-  July   = list(month_day = "07-28", NDVI = "../WZMAllDOYs/Quantiles_209.nc"),
+  July   = list(month_day = "07-28", NDVI = "../WZMAllDOYs/Quantiles_209.nc"), 
   August = list(month_day = "08-29", NDVI = "../WZMAllDOYs/Quantiles_241.nc")
 )
 
@@ -176,15 +176,15 @@ for (d in depths) {
   
   # Standardize & select final columns
   final_df <- combined %>%
-    rename(
-      soil_water_potential = psi,        # adjust 'psi' to actual PSI column name
-      transpiration_deficit  = tdiff,     # adjust 'tdiff' to actual TDiff column name
-      quantiles              = ndvi_quantile  # adjust to your NDVI quantile column name
-    ) %>%
+    # rename(
+    #   soil_water_potential = psi,        # adjust 'psi' to actual PSI column name
+    #   transpiration_deficit  = tdiff,     # adjust 'tdiff' to actual TDiff column name
+    #   quantiles              = ndvi_quantile  # adjust to your NDVI quantile column name
+    # ) %>%
     select(year, month, species,
            soil_water_potential,
            transpiration_deficit,
-           quantiles, x, y)
+           Quantiles, x, y)
   
   # Assign and save the standardized dataframe
   assign(sprintf("final_df_depth%d", d), final_df)

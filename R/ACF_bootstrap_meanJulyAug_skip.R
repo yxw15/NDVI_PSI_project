@@ -207,11 +207,17 @@ processDataFrame <- function(df, parameter_col, lag.max = 21, n_boot = 1000, alp
 # =============================================================================
 # Execution: Loop Over Species and Parameters with Skip Logic
 # =============================================================================
-species_list <- c("Oak", "Beech", "Pine", "Spruce")
-parameters   <- c("mean_soil_water_potential", "mean_transpiration_deficit", "mean_Quantiles")
-var_names    <- c("mean_soil_water_potential" = "PSI",
-                  "mean_transpiration_deficit"  = "TDiff",
-                  "mean_Quantiles"              = "Q")
+# species_list <- c("Oak", "Beech", "Pine", "Spruce")
+
+# parameters   <- c("mean_soil_water_potential", "mean_transpiration_deficit", "mean_Quantiles")
+# var_names    <- c("mean_soil_water_potential" = "PSI",
+#                   "mean_transpiration_deficit"  = "TDiff",
+#                   "mean_Quantiles"              = "Q")
+
+species_list <- c("Pine")
+parameters   <- c("mean_Quantiles")
+var_names    <- c("mean_Quantiles"  = "Q")
+
 out_dir      <- "results/key_displays_July_August"
 
 for (sp in species_list) {

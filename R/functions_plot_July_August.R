@@ -299,11 +299,16 @@ plot_distribution_combined <- function(input_data, output_figure) {
                    fill = "#0072B2", colour = "black") +
     scale_x_continuous(breaks = pt_ticks,
                        limits = range(pt_breaks), expand = c(0, 0)) +
-    scale_y_continuous(expand = expansion(mult = c(0, 0.1)),
-                       labels = percent_format(scale = 1)) +
+    # scale_y_continuous(expand = expansion(mult = c(0, 0.1)),
+    #                    labels = percent_format(scale = 1)) +
+    scale_y_continuous(
+      breaks = c(0, 5, 10, 15, 20),  
+      labels = scales::percent_format(scale = 1),
+      expand = expansion(mult = c(0, 0.1))
+    ) +
     labs(x = expression(log[10](abs(T[d]))), y = NULL, tag = "(e)") +
     custom_theme +
-    theme(plot.tag.position = c(0.02, 0.93),
+    theme(plot.tag.position = c(0.02, 0.98),
           plot.tag          = element_text(face = "bold", size = 16))
   
   # combine layout: a on top, b/c second row, d/e third row
@@ -321,6 +326,79 @@ plot_distribution_combined <- function(input_data, output_figure) {
 }
 
 plot_distribution_combined(df, "results/key_displays_July_August/distribution_combined.png")
+
+plot_distribution_combined_PSI <- function(input_data, output_figure) {
+  library(ggplot2)
+  library(patchwork)
+  library(scales)
+  
+  # custom theme
+  custom_theme <- theme(
+    axis.text.x       = element_text(angle = 0, hjust = 0.5),
+    plot.background   = element_rect(fill = "white", color = "white"),
+    panel.background  = element_rect(fill = "white"),
+    legend.background = element_rect(fill = "white", color = "white"),
+    plot.title        = element_text(hjust = 0.5, size = 18, face = "bold"),
+    axis.title        = element_text(face = "bold", size = 16),
+    axis.text         = element_text(color = "black", size = 14),
+    panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major  = element_blank(),
+    panel.grid.minor  = element_blank(),
+    legend.position   = "top",
+    legend.text       = element_text(size = 14)
+  )
+  
+  # (b) Soil water potential original
+  p2 <- ggplot(input_data, aes(x = soil_water_potential)) +
+    geom_histogram(aes(y = after_stat(count / sum(count) * 100)),
+                   binwidth = 50, fill = "#E69F00", colour = "black") +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.05)),
+                       labels = percent_format(scale = 1)) +
+    labs(x = "soil water potential (kPa)", y = NULL, tag = "(a)") +
+    custom_theme +
+    theme(plot.tag.position = c(0.02, 0.98),
+          plot.tag          = element_text(face = "bold", size = 16))
+  
+  # (c) Soil water potential log-transformed
+  data_log <- input_data
+  data_log$pF <- log10(abs(data_log$soil_water_potential))
+  data_log <- subset(data_log, is.finite(pF))
+  pf_breaks <- seq(floor(min(data_log$pF) / 0.3) * 0.3,
+                   ceiling(max(data_log$pF) / 0.3) * 0.3,
+                   by = 0.3)
+  pf_ticks  <- pf_breaks[seq(1, length(pf_breaks), by = 3)][-1]
+  p3 <- ggplot(data_log, aes(x = pF)) +
+    geom_histogram(aes(y = after_stat(count / sum(count) * 100)),
+                   binwidth = 0.3, boundary = pf_breaks[1],
+                   fill = "#E69F00", colour = "black") +
+    scale_x_continuous(breaks = pf_ticks,
+                       limits = range(pf_breaks), expand = c(0, 0)) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.05)),
+                       labels = percent_format(scale = 1)) +
+    labs(
+      x = expression(paste(log[10], " | ", Psi[soil], " |")),
+      y = NULL,
+      tag = "(b)"
+    ) +
+    custom_theme +
+    theme(plot.tag.position = c(0.02, 0.98),
+          plot.tag          = element_text(face = "bold", size = 16))
+  
+  # combine layout: a on top, b/c second row, d/e third row
+  combined <- p2 | p3
+  
+  # save to file
+  ggsave(
+    filename = output_figure,
+    plot     = combined,
+    width    = 10,
+    height   = 5,
+    dpi      = 300
+  )
+  invisible(combined)
+}
+
+plot_distribution_combined_PSI(df, "results/key_displays_July_August/distribution_combined_psi.png")
 
 plot_combined_AIC_R2 <- function(data, save_combined_fig) {
   
@@ -683,6 +761,8 @@ plot_NDVI_Q_PSIbin_log <- function(data, save_coeff_fig, save_slope_fig) {
     geom_hline(yintercept = threshold, linetype = "dashed", color = "black", linewidth = 1) +
     scale_color_manual(values = cb_palette, name = "") +
     scale_size_continuous(name = "Pixel %", range = c(1, 6)) +
+    annotate("text", x = 0, y = threshold, label = "median", 
+             hjust = -0.1, vjust = -0.3, fontface = "italic", size = 5) +
     labs(x = "transformed soil water potential", y = "NDVI quantiles (rank)") +
     ggtitle("(a)") +
     theme_minimal() +

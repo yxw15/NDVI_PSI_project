@@ -2832,6 +2832,7 @@ plot_Quantiles_TDiff_month_species_linear_orig <- function(data, figure_output =
   return(list(linear_fit_plot = p1, regression_parameters_barplot = p2))
 }
 
+# depth 50
 plot_Quantiles_PSI_month_species_linear_orig(final_df, 
                                              figure_output = "results/key_displays/Quantiles_PSI_linear_slope_monthly.png",
                                              figure_output2 = "results/key_displays/Quantiles_PSI_linear_coeff_monthly.png")
@@ -2839,6 +2840,27 @@ plot_Quantiles_PSI_month_species_linear_orig(final_df,
 plot_Quantiles_TDiff_month_species_linear_orig(final_df, 
                                                figure_output = "results/key_displays/Quantiles_TDiff_linear_slope_monthly.png",
                                                figure_output2 = "results/key_displays/Quantiles_TDiff_linear_coeff_monthly.png")
+
+# depth 100
+load("results/Data/final_df_depth100.RData")
+
+plot_Quantiles_PSI_month_species_linear_orig(final_df_depth100, 
+                                             figure_output = "results/key_displays/Quantiles_PSI_linear_slope_monthly_depth100.png",
+                                             figure_output2 = "results/key_displays/Quantiles_PSI_linear_coeff_monthly_depth100.png")
+
+plot_Quantiles_TDiff_month_species_linear_orig(final_df_depth100, 
+                                               figure_output = "results/key_displays/Quantiles_TDiff_linear_slope_monthly_depth100.png",
+                                               figure_output2 = "results/key_displays/Quantiles_TDiff_linear_coeff_monthly_depth100.png")
+
+load("results/Data/final_df_depth150.RData")
+# depth 150
+plot_Quantiles_PSI_month_species_linear_orig(final_df_depth150, 
+                                             figure_output = "results/key_displays/Quantiles_PSI_linear_slope_monthly_depth150.png",
+                                             figure_output2 = "results/key_displays/Quantiles_PSI_linear_coeff_monthly_depth150.png")
+
+plot_Quantiles_TDiff_month_species_linear_orig(final_df_depth150, 
+                                               figure_output = "results/key_displays/Quantiles_TDiff_linear_slope_monthly_depth150.png",
+                                               figure_output2 = "results/key_displays/Quantiles_TDiff_linear_coeff_monthly_depth150.png")
 
 ### End of July and August ###
 library(dplyr)
@@ -3250,10 +3272,6 @@ plot_yearly_mean_linear_coeffs(df, "results/key_displays_July_August/yearly_mean
 plot_Quantiles_PSI_exp_linear_slope_coeff(df, 
                                           "results/key_displays_July_August/NDVI_Q_PSIbin_exp_linear_coeff_negPSI.png",
                                           "results/key_displays_July_August/NDVI_Q_PSIbin_exp_linear_slope_negPSI.png")
-
-plot_Quantiles_TDiff_exp_linear_slope_coeff(df,
-                                            "results/key_displays_July_August/NDVI_Q_TDiffbin_exp_linear_coeff.png",
-                                            "results/key_displays_July_August/NDVI_Q_TDiffbin_exp_linear_slope.png")
 
 plot_Quantiles_TDiff_exp_slope_coeff(df, 
                                      "results/key_displays_July_August/NDVI_Q_TDiffbin_exp_coeff.png",
@@ -3706,3 +3724,676 @@ plot_density_Quantiles_PSI_linear(df,
 
 plot_density_Quantiles_TDiff_linear(df, 
                                     output_path = "results/key_displays_July_August/Quantiles_TDiff_density.png")
+
+##### Change the size of point based on percentage of pixels of each bin
+
+plot_Quantiles_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output_figure) {
+  # Process data
+  data <- NDVI_PSIbin(data)
+  data <- na.omit(data)
+  
+  # Load libraries
+  library(ggplot2); library(dplyr); library(tidyr); library(tibble)
+  library(patchwork); library(purrr); library(nlme); library(car); library(broom)
+  
+  # Define species and palette
+  value_col      <- "avg_value"
+  linear_species <- c("Oak", "Beech")
+  exp_species    <- c("Spruce", "Pine")
+  data$species   <- factor(data$species, levels = c(linear_species, exp_species))
+  cb_palette     <- c(
+    "Oak"    = "#E69F00",
+    "Beech"  = "#0072B2",
+    "Spruce" = "#009E73",
+    "Pine"   = "#F0E442"
+  )
+  
+  # Prepare data
+  data <- data %>% mutate(x = bin_median)
+  data_clean <- data %>% filter(!is.na(.data[[value_col]]), is.finite(x))
+  threshold <- 11.5
+  
+  ##########################
+  # Model Fitting by Group #
+  ##########################
+  models_linear <- list()
+  for (sp in linear_species) {
+    sp_data <- data_clean %>% filter(species == sp)
+    models_linear[[sp]] <- lm(avg_value ~ x, data = sp_data)
+  }
+  models_exp <- list()
+  start_list <- list(a = 5, b = 3, c = 0.001)
+  control_params <- nls.control(maxiter = 1200, minFactor = 1e-9)
+  for (sp in exp_species) {
+    sp_data <- data_clean %>% filter(species == sp)
+    if (nrow(sp_data) < 5) { models_exp[[sp]] <- NULL; next }
+    models_exp[[sp]] <- tryCatch({
+      nls(avg_value ~ a + b * exp(c * x), data = sp_data,
+          start = start_list, control = control_params)
+    }, error = function(e) NULL)
+  }
+  
+  ##############################################
+  # Predictions for Panel A
+  ##############################################
+  pred_linear <- bind_rows(lapply(linear_species, function(sp) {
+    df <- data_clean %>% filter(species == sp)
+    x_seq <- seq(min(df$x), max(df$x), length.out = 100)
+    data.frame(species = sp, x = x_seq,
+               pred = predict(models_linear[[sp]], newdata = data.frame(x = x_seq)))
+  }))
+  pred_exp <- bind_rows(lapply(exp_species, function(sp) {
+    mod <- models_exp[[sp]]; if (is.null(mod)) return(NULL)
+    df <- data_clean %>% filter(species == sp)
+    x_seq <- seq(min(df$x), max(df$x), length.out = 100)
+    data.frame(species = sp, x = x_seq,
+               pred = predict(mod, newdata = data.frame(x = x_seq)))
+  }))
+  pred_all <- bind_rows(pred_linear, pred_exp)
+  
+  # Panel A: combined
+  p_combined <- ggplot() +
+    geom_point(data = data_clean,
+               aes(x = x, y = avg_value, color = species, size = percentage), alpha = 0.7) +
+    geom_line(data = pred_all,
+              aes(x = x, y = pred, color = species), linewidth = 1) +
+    geom_hline(yintercept = threshold, linetype = "dashed", color = "black", linewidth = 1) +
+    annotate("text", x = min(data_clean$x), y = threshold,
+             label = "median", fontface = "italic",
+             hjust = -0.1, vjust = -0.3, size = 5) +
+    scale_color_manual(values = cb_palette, name = "Species") +
+    scale_size_continuous(
+      name = "% pixels per bin",
+      range = c(1, 8)
+    ) +
+    labs(x = "soil water potential (kPa)",
+         y = "NDVI quantiles (rank)") +
+    ggtitle("(a)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      plot.background   = element_rect(fill = "white", color = "white"),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank(),
+      legend.background = element_rect(fill = "white", color = "white"),
+      legend.text       = element_text(size = 14),
+      legend.position   = "bottom"
+    )
+  
+  #################################################
+  # Stats for Panels B & C
+  #################################################
+  lin_stats <- bind_rows(lapply(linear_species, function(sp) {
+    mod <- models_linear[[sp]]; summ <- summary(mod)$coefficients
+    intercept <- summ["(Intercept)", "Estimate"]; slope <- summ["x", "Estimate"]
+    se_slope <- summ["x", "Std. Error"]; p_val <- summ["x", "Pr(>|t|)"]
+    x50 <- (threshold - intercept) / slope; abs_sl <- abs(slope)
+    r2 <- summary(mod)$r.squared
+    data.frame(species = sp, x50 = x50, abs_slope = abs_sl,
+               se = se_slope, p_val = p_val, r_squared = r2)
+  }))
+  exp_stats <- bind_rows(lapply(exp_species, function(sp) {
+    mod <- models_exp[[sp]]; if (is.null(mod)) return(NULL)
+    co <- coef(mod); a <- co["a"]; b <- co["b"]; c <- co["c"]
+    x50 <- ifelse((threshold - a) > 0 & b > 0, log((threshold - a)/b)/c, NA)
+    slope50 <- c * (threshold - a); abs_sl <- abs(slope50)
+    df_sp <- data_clean %>% filter(species == sp)
+    r2 <- 1 - sum((df_sp[[value_col]] - predict(mod, df_sp))^2) /
+      sum((df_sp[[value_col]] - mean(df_sp[[value_col]]))^2)
+    dm <- deltaMethod(mod, paste0("c*(a - ", threshold, ")"), parameterNames = c("a","b","c"))
+    se <- dm$SE; df_res <- summary(mod)$df[2]
+    t_val <- slope50 / se; p_val <- 2*(1-pt(abs(t_val), df_res))
+    data.frame(species = sp, x50 = x50, abs_slope = abs_sl,
+               se = se, p_val = p_val, r_squared = r2)
+  }))
+  stats_all <- bind_rows(lin_stats, exp_stats)
+  stats_all$species <- factor(stats_all$species, levels = c(linear_species, exp_species))
+  
+  # Panel B: x50
+  p_x50 <- ggplot(stats_all, aes(x = species, y = x50, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    scale_fill_manual(values = cb_palette, guide = FALSE) +
+    labs(x = "", y = "soil water potential (kPa)") +
+    ggtitle("(b)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank()
+    )
+  
+  # Panel C: absolute slope
+  p_slope <- ggplot(stats_all, aes(x = species, y = abs_slope, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    geom_errorbar(aes(ymin = pmax(0, abs_slope - se), ymax = abs_slope + se), width = 0.2) +
+    geom_text(aes(label = if_else(p_val < 0.05,
+                                  sprintf("%.2f*", r_squared),
+                                  sprintf("%.2f", r_squared)),
+                  y = abs_slope/2), size = 5) +
+    scale_fill_manual(values = cb_palette, guide = FALSE) +
+    labs(x = "", y = "absolute slope") +
+    ggtitle("(c)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank()
+    )
+  
+  # Combine panels
+  final_plot <- (p_combined + (p_x50 / p_slope)) +
+    plot_layout(widths = c(2, 1), guides = "collect") &
+    theme(
+      legend.position       = "bottom",
+      legend.title          = element_blank(),
+      legend.text           = element_text(size = 14),
+      legend.key            = element_rect(fill = "white", color = NA),
+      legend.background     = element_blank(),
+      legend.box.background = element_blank()
+    )
+  
+  print(final_plot)
+  ggsave(output_figure, final_plot, device = "png", width = 10, height = 8, dpi = 300)
+}
+
+plot_Quantiles_PSI_exp_linear_slope_coeff(df, 
+                                          "results/key_displays_July_August/NDVI_Q_PSIbin_exp_linear_coeff_negPSI_size.png",
+                                          "results/key_displays_July_August/NDVI_Q_PSIbin_exp_linear_slope_negPSI_size.png")
+
+plot_Quantiles_TDiff_exp_linear_slope_coeff <- function(data, combined_coef_fig, output_figure) {
+  # Process data
+  data <- NDVI_TDiffbin(data)
+  data <- na.omit(data)
+  
+  # Load libraries
+  library(ggplot2); library(dplyr); library(tidyr); library(tibble)
+  library(patchwork); library(purrr); library(nlme); library(car); library(broom)
+  
+  # Define species and palette
+  value_col      <- "avg_value"
+  linear_species <- c("Oak", "Beech")
+  exp_species    <- c("Spruce", "Pine")
+  data$species   <- factor(data$species, levels = c(linear_species, exp_species))
+  cb_palette     <- c(
+    "Oak"    = "#E69F00",
+    "Beech"  = "#0072B2",
+    "Spruce" = "#009E73",
+    "Pine"   = "#F0E442"
+  )
+  
+  # Prepare data
+  data <- data %>% mutate(x = bin_median)
+  data_clean <- data %>% filter(!is.na(.data[[value_col]]), is.finite(x))
+  threshold <- 11.5
+  
+  ##########################
+  # Model Fitting by Group #
+  ##########################
+  models_linear <- list()
+  for (sp in linear_species) {
+    sp_data <- data_clean %>% filter(species == sp)
+    models_linear[[sp]] <- lm(avg_value ~ x, data = sp_data)
+  }
+  models_exp <- list()
+  start_list <- list(a = 5, b = 7, c = 0.04)
+  control_params <- nls.control(maxiter = 1200, minFactor = 1e-9)
+  for (sp in exp_species) {
+    sp_data <- data_clean %>% filter(species == sp)
+    if (nrow(sp_data) < 5) { models_exp[[sp]] <- NULL; next }
+    models_exp[[sp]] <- tryCatch({
+      nls(avg_value ~ a + b * exp(-c * x), data = sp_data,
+          start = start_list, control = control_params)
+    }, error = function(e) NULL)
+  }
+  
+  ##############################################
+  # Predictions for Panel A                    #
+  ##############################################
+  pred_linear <- bind_rows(lapply(linear_species, function(sp) {
+    df   <- data_clean %>% filter(species == sp)
+    xseq <- seq(min(df$x), max(df$x), length.out = 100)
+    data.frame(species = sp, x = xseq,
+               pred = predict(models_linear[[sp]], newdata = data.frame(x = xseq)))
+  }))
+  pred_exp <- bind_rows(lapply(exp_species, function(sp) {
+    mod <- models_exp[[sp]]; if (is.null(mod)) return(NULL)
+    df   <- data_clean %>% filter(species == sp)
+    xseq <- seq(min(df$x), max(df$x), length.out = 100)
+    data.frame(species = sp, x = xseq,
+               pred = predict(mod, newdata = data.frame(x = xseq)))
+  }))
+  pred_all <- bind_rows(pred_linear, pred_exp)
+  
+  # Panel A: combined with size aesthetic
+  p_combined <- ggplot() +
+    geom_point(data = data_clean,
+               aes(x = x, y = avg_value, color = species, size = percentage), alpha = 0.7) +
+    geom_line(data = pred_all,
+              aes(x = x, y = pred, color = species), linewidth = 1) +
+    geom_hline(yintercept = threshold, linetype = "dashed",
+               color = "black", linewidth = 1) +
+    annotate("text", x = 35, y = threshold,
+             label = "median", fontface = "italic",
+             hjust = -0.1, vjust = -0.3, size = 5) +
+    scale_color_manual(values = cb_palette, name = "Species") +
+    scale_size_continuous(name = "% pixels per bin", range = c(1, 8)) +
+    labs(x = "transpiration deficit", y = "NDVI quantiles") +
+    ggtitle("(a)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank(),
+      legend.position   = "bottom",
+      legend.text       = element_text(size = 14),
+      legend.background = element_rect(fill = "white", color = "white")
+    )
+  
+  #################################################
+  # Stats for Panels B & C                         #
+  #################################################
+  lin_stats <- bind_rows(lapply(linear_species, function(sp) {
+    mod     <- models_linear[[sp]]; summ <- summary(mod)$coefficients
+    a       <- summ["(Intercept)", "Estimate"]; b <- summ["x", "Estimate"]
+    se      <- summ["x", "Std. Error"]; pval <- summ["x", "Pr(>|t|)"]
+    x50     <- (threshold - a) / b; abs_s  <- abs(b)
+    r2      <- summary(mod)$r.squared
+    data.frame(species = sp, x50 = x50, abs_slope = abs_s,
+               se = se, p_val = pval, r_squared = r2)
+  }))
+  exp_stats <- bind_rows(lapply(exp_species, function(sp) {
+    mod  <- models_exp[[sp]]; if (is.null(mod)) return(NULL)
+    co   <- coef(mod); a <- co["a"]; b <- co["b"]; c <- co["c"]
+    x50  <- ifelse((threshold - a) > 0 & b > 0,
+                   -log((threshold - a)/b) / c, NA)
+    slope50 <- -c * (threshold - a); abs_s    <- abs(slope50)
+    df_sp    <- data_clean %>% filter(species == sp)
+    r2       <- 1 - sum((df_sp[[value_col]] - predict(mod, df_sp))^2) /
+      sum((df_sp[[value_col]] - mean(df_sp[[value_col]]))^2)
+    dm       <- deltaMethod(mod, paste0("c*(a - ", threshold, ")"),
+                            parameterNames = c("a","b","c"))
+    se       <- dm$SE; df_res <- summary(mod)$df[2]
+    tval     <- slope50 / se; pval <- 2 * (1 - pt(abs(tval), df_res))
+    data.frame(species = sp, x50 = x50, abs_slope = abs_s,
+               se = se, p_val = pval, r_squared = r2)
+  }))
+  stats_all <- bind_rows(lin_stats, exp_stats)
+  stats_all$species <- factor(stats_all$species, levels = c(linear_species, exp_species))
+  
+  # Panel B: x50
+  p_x50 <- ggplot(stats_all, aes(x = species, y = x50, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    scale_fill_manual(values = cb_palette, guide = FALSE) +
+    labs(x = "", y = "transpiration deficit") +
+    ggtitle("(b)") +
+    theme_minimal() +
+    theme(
+      plot.title       = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title       = element_text(face = "bold", size = 16),
+      axis.text        = element_text(color = "black", size = 14),
+      axis.text.x      = element_text(angle = 0, hjust = 0.5),
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+  
+  # Panel C: absolute slope
+  p_slope <- ggplot(stats_all, aes(x = species, y = abs_slope, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    geom_errorbar(aes(ymin = pmax(0, abs_slope - se), ymax = abs_slope + se), width = 0.2) +
+    geom_text(aes(label = if_else(p_val < 0.05,
+                                  sprintf("%.2f*", r_squared),
+                                  sprintf("%.2f", r_squared)), y = abs_slope / 2), size = 5) +
+    scale_fill_manual(values = cb_palette, guide = FALSE) +
+    labs(x = "", y = "absolute slope") +
+    ggtitle("(c)") +
+    theme_minimal() +
+    theme(
+      plot.title       = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title       = element_text(face = "bold", size = 16),
+      axis.text        = element_text(color = "black", size = 14),
+      axis.text.x      = element_text(angle = 0, hjust = 0.5),
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+  
+  # Combine panels with unified bottom legends
+  final_plot <- (p_combined + (p_x50 / p_slope)) +
+    plot_layout(widths = c(2, 1), guides = "collect") &
+    theme(
+      legend.position       = "bottom",
+      legend.title          = element_blank(),
+      legend.text           = element_text(size = 14),
+      legend.key            = element_rect(fill = "white", color = NA),
+      legend.background     = element_blank(),
+      legend.box.background = element_blank()
+    )
+  
+  print(final_plot)
+  ggsave(output_figure, final_plot, device = "png",
+         width = 10, height = 8, dpi = 300)
+}
+
+plot_Quantiles_TDiff_exp_linear_slope_coeff(df,
+                                            "results/key_displays_July_August/NDVI_Q_TDiffbin_exp_linear_coeff_size.png",
+                                            "results/key_displays_July_August/NDVI_Q_TDiffbin_exp_linear_slope_size.png")
+
+plot_TDiff_PSIbin_poly_2_slope <- function(data, coef_output, figure_output) {
+  # Load required libraries
+  library(lme4)      # For mixed-effects modeling
+  library(dplyr)     # For data manipulation
+  library(ggplot2)   # For plotting
+  library(patchwork) # For combining ggplots
+  library(tidyr)     # For pivoting data
+  library(car)       # For deltaMethod
+  library(nlme)      # For nlsList (if needed)
+  
+  # Process the data and remove NAs
+  TDiff_PSIbin_df <- TDiff_PSIbin(data)
+  TDiff_PSIbin_df <- na.omit(TDiff_PSIbin_df)
+  
+  # Define color palette and species order
+  cb_palette <- c("Oak"   = "#E69F00",   # Orange
+                  "Beech" = "#0072B2",   # Deep blue
+                  "Spruce"= "#009E73",   # Bluish-green
+                  "Pine"  = "#F0E442")   # Yellow
+  species_levels <- c("Oak", "Beech", "Spruce", "Pine")
+  TDiff_PSIbin_df$species <- factor(TDiff_PSIbin_df$species, levels = species_levels)
+  
+  ## Panel A: Mixed-Effects Model Plot (same as before)
+  model <- lmer(avg_transpiration_deficit ~ poly(bin_median, 2, raw = TRUE) + 
+                  (poly(bin_median, 2, raw = TRUE) | species),
+                data = TDiff_PSIbin_df)
+  
+  # Create prediction data
+  pred_data <- TDiff_PSIbin_df %>%
+    group_by(species) %>%
+    summarise(min_bin = min(bin_median),
+              max_bin = max(bin_median)) %>%
+    group_by(species) %>%
+    do(data.frame(bin_median = seq(.$min_bin, .$max_bin, length.out = 100))) %>%
+    ungroup()
+  pred_data$species <- factor(pred_data$species, levels = species_levels)
+  pred_data$predicted <- predict(model, newdata = pred_data, re.form = NULL)
+  
+  # Keep only the segment from maximum fitted value
+  pred_data <- pred_data %>%
+    group_by(species) %>%
+    filter(bin_median >= bin_median[which.max(predicted)]) %>%
+    ungroup()
+  
+  # Calculate mean and median transpiration deficit
+  line_val <- mean(data$transpiration_deficit)
+  line_median <- median(data$transpiration_deficit)
+  
+  # Create the plot
+  plot_mixed <- ggplot(TDiff_PSIbin_df, aes(x = bin_median, y = avg_transpiration_deficit, color = species)) +
+    geom_point(data = TDiff_PSIbin_df,
+               aes(x = bin_median,
+                   y = avg_transpiration_deficit,
+                   color = species,
+                   size = percentage)) +
+    geom_line(data = pred_data,
+              aes(x = bin_median,
+                  y = predicted,
+                  color = species),
+                  linewidth = 1) +
+    geom_hline(yintercept = line_val, linetype = "dashed", color = "black", linewidth = 1) +
+    annotate("text", x = min(TDiff_PSIbin_df$bin_median, na.rm = TRUE), 
+             y = line_val, label = paste0("mean: ", round(line_val, 2)),
+             hjust = -0.1, vjust = -0.3, fontface = "italic", size = 5) +
+    geom_hline(yintercept = line_median, linetype = "dashed", color = "black", linewidth = 1) +
+    annotate("text", x = min(TDiff_PSIbin_df$bin_median, na.rm = TRUE), 
+             y = line_median, label = paste0("median: ", round(line_median, 2)),
+             hjust = -0.1, vjust = -0.3, fontface = "italic", size = 5) +
+    scale_color_manual(values = cb_palette, name = "") +
+    labs(x = "soil water potential (kPa)", y = "transpiration deficit (mm)") +
+    ggtitle("(a)") +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.text = element_text(size = 14)
+    )
+  
+  ## Analytical Calculation of x50 and Slope (modified with delta method)
+  
+  # Extract species-specific coefficients
+  species_coef <- coef(model)$species %>%
+    tibble::rownames_to_column("species") %>%
+    rename(a = `(Intercept)`, 
+           b = `poly(bin_median, 2, raw = TRUE)1`, 
+           c = `poly(bin_median, 2, raw = TRUE)2`)
+  
+  # For each species, fit a separate model to use with deltaMethod
+  species_list <- species_levels
+  stats_list <- lapply(species_list, function(sp) {
+    # Fit model for this species only
+    df_sp <- TDiff_PSIbin_df %>% filter(species == sp)
+    mod_sp <- lm(avg_transpiration_deficit ~ poly(bin_median, 2, raw = TRUE), data = df_sp)
+    
+    # Get coefficients for this species
+    coefs <- coef(mod_sp)
+    a <- coefs[1]; b <- coefs[2]; c <- coefs[3]
+    
+    # Calculate x50 (where curve crosses mean transpiration deficit)
+    disc <- b^2 - 4 * c * (a - line_val)
+    x50 <- ifelse(disc >= 0, (-b + sqrt(disc)) / (2 * c), NA_real_)
+    
+    # Use delta method to get SE for slope at x50 (derivative: b + 2*c*x)
+    if(!is.na(x50)) {
+      # Expression for slope at x50
+      slope_expr <- paste0("b + 2 * c * ", x50)
+      dm_result <- deltaMethod(mod_sp, slope_expr, parameterNames = c("a", "b", "c"))
+      
+      # Calculate p-value
+      t_val <- (b + 2 * c * x50) / dm_result$SE
+      df_resid <- df.residual(mod_sp)
+      p_val <- 2 * (1 - pt(abs(t_val), df_resid))
+      
+      # Calculate R-squared
+      fitted_vals <- predict(mod_sp)
+      r_squared <- 1 - sum((df_sp$avg_transpiration_deficit - fitted_vals)^2) /
+        sum((df_sp$avg_transpiration_deficit - mean(df_sp$avg_transpiration_deficit))^2)
+      
+      tibble(
+        species = sp,
+        x50 = x50,
+        slope50 = b + 2 * c * x50,
+        slope_abs = abs(b + 2 * c * x50),
+        se = dm_result$SE,
+        p_val = p_val,
+        r_squared = r_squared
+      )
+    } else {
+      tibble(
+        species = sp,
+        x50 = NA_real_,
+        slope50 = NA_real_,
+        slope_abs = NA_real_,
+        se = NA_real_,
+        p_val = NA_real_,
+        r_squared = NA_real_
+      )
+    }
+  })
+  
+  stats_df <- bind_rows(stats_list)
+  stats_df$species <- factor(stats_df$species, levels = species_levels)
+  
+  # Create label text with R² and significance
+  stats_df <- stats_df %>%
+    mutate(label_text = ifelse(p_val < 0.05,
+                               sprintf("%.2f*", r_squared),
+                               sprintf("%.2f\np = %.2f", r_squared, p_val)))
+  
+  ## Panel B: Bar Plot of x50 Values
+  p_bar_x <- ggplot(stats_df, aes(x = species, y = x50, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    scale_fill_manual(values = cb_palette, name ="") +
+    guides(fill = "none") +
+    labs(x = "", y = "soil water potential (kPa)") +
+    ggtitle("(b)") +
+    expand_limits(y = 0) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+  
+  ## Panel C: Bar Plot of Absolute Slopes with Error Bars (using delta method SE)
+  p_bar <- ggplot(stats_df, aes(x = species, y = slope_abs, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    geom_errorbar(aes(ymin = pmax(0, slope_abs - se), 
+                      ymax = slope_abs + se), 
+                  width = 0.2) +
+    geom_text(aes(label = label_text, y = slope_abs/2), 
+              color = "black", size = 5) +
+    scale_fill_manual(values = cb_palette, name = "") +
+    guides(fill = "none") +
+    labs(x = "", y = "absolute slope") +
+    ggtitle("(c)") +
+    expand_limits(y = 0) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
+      panel.background = element_rect(fill = "white"),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank()
+    )
+  
+  # Combine plots
+  final_plot <- (plot_mixed + (p_bar_x / p_bar)) +
+    plot_layout(widths = c(2, 1), guides = "collect") &
+    theme(
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 14),
+      legend.key = element_rect(fill = "white", color = NA),
+      legend.background = element_blank(),
+      legend.box.background = element_blank()
+    )
+  
+  print(final_plot)
+  ggsave(figure_output, plot = final_plot, width = 10, height = 8, dpi = 300)
+  
+  ## Coefficient Plot (same as before)
+  # Extract the species-specific (conditional) coefficients.
+  species_coef <- coef(model)$species
+  
+  # Convert rownames to a proper column and pivot the data to long format.
+  coeff_data <- species_coef %>%
+    tibble::rownames_to_column("species") %>%
+    pivot_longer(cols = -species, names_to = "term", values_to = "value") %>%
+    mutate(species = factor(species, levels = species_levels),
+           term = dplyr::recode(term,
+                                "(Intercept)" = "a",
+                                "poly(bin_median, 2, raw = TRUE)1" = "b",
+                                "poly(bin_median, 2, raw = TRUE)2" = "c"))
+  
+  # Set the order of the term factor.
+  coeff_data$term <- factor(coeff_data$term, levels = c("a", "b", "c"))
+  
+  ## Compute p-values for coefficients by fitting separate linear models for each species.
+  species_list <- species_levels
+  coeff_stats_list <- lapply(species_list, function(sp) {
+    subdata <- subset(TDiff_PSIbin_df, species == sp)
+    mod_sp <- lm(avg_transpiration_deficit ~ poly(bin_median, 2, raw = TRUE), data = subdata)
+    summ <- summary(mod_sp)$coefficients
+    df <- as.data.frame(summ)
+    df$term <- rownames(df)
+    df$species <- sp
+    df
+  })
+  
+  coeff_stats <- do.call(rbind, coeff_stats_list)
+  coeff_stats <- coeff_stats %>%
+    mutate(term = dplyr::recode(term,
+                                "(Intercept)" = "a",
+                                "poly(bin_median, 2, raw = TRUE)1" = "b",
+                                "poly(bin_median, 2, raw = TRUE)2" = "c")) %>%
+    dplyr::select(species, term, p_value = `Pr(>|t|)`)
+  
+  # Join the p-values with the coefficient data.
+  coeff_data <- left_join(coeff_data, coeff_stats, by = c("species", "term"))
+  
+  # Create a label: if p < 0.05 then "*" else the p_value with 2 decimals.
+  coeff_data <- coeff_data %>%
+    mutate(label_text = ifelse(p_value < 0.05, "*", sprintf("%.2f", p_value)))
+  
+  coeff_data$species <- factor(coeff_data$species, levels = species_levels)
+  
+  # Create the grouped bar plot with p-value labels centered in each bar.
+  plot_coeff <- ggplot(coeff_data, aes(x = species, y = value, fill = species)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7) +
+    geom_text(aes(label = label_text, y = value/2), 
+              color = "black", size = 5, 
+              position = position_dodge(width = 0.8)) +
+    facet_wrap(~ term, scales = "free_y") +
+    scale_fill_manual(values = cb_palette, name = "") +
+    labs(title = "transpiration deficit ~ soil water potential", 
+         subtitle = expression(NDVI == a + b*x + c*x^2 + epsilon),
+         x = "", 
+         y = "coefficient value") +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 0, hjust = 0.5),
+      plot.background = element_rect(fill = "white", color = "white"),
+      panel.background = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.subtitle = element_text(hjust = 0.5, size =14),
+      axis.title = element_text(face = "bold", size = 16),
+      axis.text = element_text(color = "black", size = 14),
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.position = "top",
+      legend.text = element_text(size = 14),
+      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.text = element_text(face = "bold", size = 12)
+    )
+  
+  print(plot_coeff)
+  
+  # Save the coefficient plot with width = 10 and height = 8.
+  ggsave(coef_output, plot = plot_coeff, width = 10, height = 8, dpi = 300)
+  
+  return(list(combined_plot = final_plot, stats_df = stats_df))
+}
+
+plot_TDiff_PSIbin_poly_2_slope(df, 
+                               "results/key_displays_July_August/TDiff_PSIbin_poly_2_coeff_size.png",
+                               "results/key_displays_July_August/TDiff_PSIbin_poly_2_slope_size.png")
