@@ -44,7 +44,7 @@ plot_species_distribution <- function(data, output_path) {
     # Use coord_quickmap() to accurately project map data 
     coord_quickmap() +
     # Plot title and axis labels
-    labs(title = "Distribution of Tree Species in Germany",
+    labs(title = "",
          x = "longitude",
          y = "latitude") +
     # Bigger legend points
@@ -1254,8 +1254,8 @@ plot_Quantiles_TDiff_exp_linear_slope_coeff <- function(data, combined_coef_fig,
     scale_fill_manual(values = cb_palette, name = "") +
     facet_wrap(~ Coefficient, scales = "free_y") +
     labs(title = "exponential models",
-         # subtitle = expression(italic(NDVI[Quantiles]) == a + b * e^{-c * italic(x)} + epsilon),
-         subtitle = expression(NDVI == a + b * e^{-c * italic(x)} + epsilon),
+         # subtitle = expression(italic(NDVI[Quantiles]) == a + b * e^{- c * italic(x)} + epsilon),
+         subtitle = expression(NDVI == a + b * e^{-~c * italic(x)} + epsilon),
          x = "",
          y = "") +
     theme_minimal() +
@@ -1284,7 +1284,7 @@ plot_Quantiles_TDiff_exp_linear_slope_coeff <- function(data, combined_coef_fig,
   print(combined_coeff)
   
   # Save the combined coefficient plot
-  ggsave(filename = combined_coef_fig, plot = combined_coeff, device = "png", width = 10, height = 8, dpi = 300)
+  ggsave(filename = combined_coef_fig, plot = combined_coeff, device = "png", width = 12, height = 8, dpi = 300)
   
   #################################################
   # Combined Final Plot with Model Predictions (Panel A)
@@ -1315,12 +1315,24 @@ plot_Quantiles_TDiff_exp_linear_slope_coeff <- function(data, combined_coef_fig,
   pred_all <- bind_rows(pred_linear_df, pred_exp_df)
   
   p_combined <- ggplot() +
-    geom_point(data = data_clean, aes(x = x, y = avg_value, color = species)) +
+    geom_point(data = data_clean,
+               aes(x = x, y = avg_value, color = species, shape = species, size = percentage), alpha = 0.7) +
     geom_line(data = pred_all, aes(x = x, y = pred, color = species), linewidth = 1) +
     geom_hline(yintercept = threshold, linetype = "dashed", color = "black", linewidth = 1) +
     annotate("text", x = min(data_clean$x, na.rm = TRUE), y = threshold,
              label = "median", hjust = -5.2, vjust = -0.3, fontface = "italic", size = 6) +
-    scale_color_manual(values = cb_palette, name = "") +
+    scale_color_manual(values = cb_palette, name = "Species") +
+    scale_shape_manual(values = c("Oak" = 16, "Beech" = 17, "Spruce" = 15, "Pine" = 18), name = "Species") +
+    scale_size_continuous(
+      name = "Pixels per bin (%)",
+      range = c(1, 8),
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    guides(
+      color = guide_legend(order = 1),
+      shape = guide_legend(order = 1),
+      size  = guide_legend(order = 2)
+    ) +
     labs(x = "transpiration deficit (mm)", y = "NDVI quantiles (rank)") +
     theme_minimal() +
     theme(
@@ -2496,6 +2508,7 @@ plot_density_Quantiles_TDiff_linear <- function(data, tdiff_bin_width = 3, outpu
 }
 
 plot_species_distribution(all_results_df, "results/key_displays/species_map.png")
+plot_species_distribution(all_df, "results/key_displays/species_map.png")
 
 plot_moran_I_distance("results_moran/data", "results/key_displays/moran_distance.png")
 
@@ -2627,6 +2640,8 @@ plot_Quantiles_PSI_month_species_linear_orig <- function(data, figure_output = N
   library(viridis)  # For color-blind-friendly colors
   library(tidyr)
   
+  data <- data %>% filter(Quantiles > 0)
+  
   # Define the order of species and months
   species_order <- c("Oak", "Beech", "Spruce", "Pine")
   month_order   <- c("April", "May", "June", "July", "August")
@@ -2650,6 +2665,7 @@ plot_Quantiles_PSI_month_species_linear_orig <- function(data, figure_output = N
       title = "NDVI quantiles ~ soil water potential",
       subtitle = expression(NDVI == a + bx + epsilon),
     ) +
+    ylim(0,22) +
     theme_minimal() +
     theme(
       plot.background = element_rect(fill = "white", color = "white"),
@@ -2833,6 +2849,8 @@ plot_Quantiles_TDiff_month_species_linear_orig <- function(data, figure_output =
 }
 
 # depth 50
+load("results/Data/All_species_month_year_Quantiles_PSI_TDiff.RData")
+final_df <- final_df %>% filter(Quantiles > 0)
 plot_Quantiles_PSI_month_species_linear_orig(final_df, 
                                              figure_output = "results/key_displays/Quantiles_PSI_linear_slope_monthly.png",
                                              figure_output2 = "results/key_displays/Quantiles_PSI_linear_coeff_monthly.png")
@@ -2842,25 +2860,18 @@ plot_Quantiles_TDiff_month_species_linear_orig(final_df,
                                                figure_output2 = "results/key_displays/Quantiles_TDiff_linear_coeff_monthly.png")
 
 # depth 100
-load("results/Data/final_df_depth100.RData")
-
-plot_Quantiles_PSI_month_species_linear_orig(final_df_depth100, 
+load("results/Data/all_species_months_depth100.RData")
+combined_df <- combined_df %>% filter(Quantiles > 0)
+plot_Quantiles_PSI_month_species_linear_orig(combined_df, 
                                              figure_output = "results/key_displays/Quantiles_PSI_linear_slope_monthly_depth100.png",
                                              figure_output2 = "results/key_displays/Quantiles_PSI_linear_coeff_monthly_depth100.png")
 
-plot_Quantiles_TDiff_month_species_linear_orig(final_df_depth100, 
-                                               figure_output = "results/key_displays/Quantiles_TDiff_linear_slope_monthly_depth100.png",
-                                               figure_output2 = "results/key_displays/Quantiles_TDiff_linear_coeff_monthly_depth100.png")
-
-load("results/Data/final_df_depth150.RData")
 # depth 150
-plot_Quantiles_PSI_month_species_linear_orig(final_df_depth150, 
+load("results/Data/all_species_months_depth150.RData")
+combined_df<- combined_df %>% filter(Quantiles > 0)
+plot_Quantiles_PSI_month_species_linear_orig(combined_df, 
                                              figure_output = "results/key_displays/Quantiles_PSI_linear_slope_monthly_depth150.png",
                                              figure_output2 = "results/key_displays/Quantiles_PSI_linear_coeff_monthly_depth150.png")
-
-plot_Quantiles_TDiff_month_species_linear_orig(final_df_depth150, 
-                                               figure_output = "results/key_displays/Quantiles_TDiff_linear_slope_monthly_depth150.png",
-                                               figure_output2 = "results/key_displays/Quantiles_TDiff_linear_coeff_monthly_depth150.png")
 
 ### End of July and August ###
 library(dplyr)
@@ -3062,7 +3073,7 @@ plot_Quantiles_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, o
   print(combined_coeff)
   
   # Save the combined coefficient plot
-  ggsave(filename = combined_coef_fig, plot = combined_coeff, device = "png", width = 10, height = 8, dpi = 300)
+  ggsave(filename = combined_coef_fig, plot = combined_coeff, device = "png", width = 12, height = 8, dpi = 300)
   
   #################################################
   # Combined Final Plot with Model Predictions (Panel A)
@@ -3294,7 +3305,9 @@ plot_density_Quantiles_TDiff_linear(df,
 setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
 
 library(dplyr)
+
 load("results/Data/All_species_month_year_Quantiles_PSI_TDiff.RData")
+
 df <- final_df %>% filter(month %in% c("July", "August"))
 
 plot_Quantiles_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output_figure) {
@@ -3725,6 +3738,7 @@ plot_density_Quantiles_PSI_linear(df,
 plot_density_Quantiles_TDiff_linear(df, 
                                     output_path = "results/key_displays_July_August/Quantiles_TDiff_density.png")
 
+
 ##### Change the size of point based on percentage of pixels of each bin
 
 plot_Quantiles_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output_figure) {
@@ -3989,7 +4003,7 @@ plot_Quantiles_TDiff_exp_linear_slope_coeff <- function(data, combined_coef_fig,
              hjust = -0.1, vjust = -0.3, size = 5) +
     scale_color_manual(values = cb_palette, name = "Species") +
     scale_size_continuous(name = "% pixels per bin", range = c(1, 8)) +
-    labs(x = "transpiration deficit", y = "NDVI quantiles") +
+    labs(x = "transpiration deficit (mm)", y = "NDVI quantiles (rank)") +
     ggtitle("(a)") +
     theme_minimal() +
     theme(
@@ -4040,7 +4054,7 @@ plot_Quantiles_TDiff_exp_linear_slope_coeff <- function(data, combined_coef_fig,
   p_x50 <- ggplot(stats_all, aes(x = species, y = x50, fill = species)) +
     geom_bar(stat = "identity", width = 0.7) +
     scale_fill_manual(values = cb_palette, guide = FALSE) +
-    labs(x = "", y = "transpiration deficit") +
+    labs(x = "", y = "transpiration deficit (mm)") +
     ggtitle("(b)") +
     theme_minimal() +
     theme(
@@ -4149,6 +4163,7 @@ plot_TDiff_PSIbin_poly_2_slope <- function(data, coef_output, figure_output) {
                aes(x = bin_median,
                    y = avg_transpiration_deficit,
                    color = species,
+                   shape = species, 
                    size = percentage)) +
     geom_line(data = pred_data,
               aes(x = bin_median,
@@ -4163,7 +4178,19 @@ plot_TDiff_PSIbin_poly_2_slope <- function(data, coef_output, figure_output) {
     annotate("text", x = min(TDiff_PSIbin_df$bin_median, na.rm = TRUE), 
              y = line_median, label = paste0("median: ", round(line_median, 2)),
              hjust = -0.1, vjust = -0.3, fontface = "italic", size = 5) +
-    scale_color_manual(values = cb_palette, name = "") +
+    scale_color_manual(values = cb_palette, name = "Species") +
+    scale_shape_manual(values = c("Oak" = 16, "Beech" = 17, "Spruce" = 15, "Pine" = 18), name = "Species") +
+    # scale_size_continuous(name = "% pixels per bin", range = c(1, 8)) +
+    scale_size_continuous(
+      name = "Pixels per bin (%)",
+      range = c(1, 8),
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    guides(
+      color = guide_legend(order = 1),
+      shape = guide_legend(order = 1),
+      size  = guide_legend(order = 2)
+    ) +
     labs(x = "soil water potential (kPa)", y = "transpiration deficit (mm)") +
     ggtitle("(a)") +
     theme_minimal() +
@@ -4397,3 +4424,398 @@ plot_TDiff_PSIbin_poly_2_slope <- function(data, coef_output, figure_output) {
 plot_TDiff_PSIbin_poly_2_slope(df, 
                                "results/key_displays_July_August/TDiff_PSIbin_poly_2_coeff_size.png",
                                "results/key_displays_July_August/TDiff_PSIbin_poly_2_slope_size.png")
+
+
+# depth 100
+load("results/Data/all_species_months_depth100.RData")
+combined_df <- combined_df %>% filter(Quantiles > 0)
+combined_df <- combined_df %>% filter(month %in% c("July", "August"))
+
+plot_Quantiles_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output_figure) {
+  # Process data
+  data <- NDVI_PSIbin(data)
+  data <- na.omit(data)
+  
+  # Load libraries
+  library(ggplot2); library(dplyr); library(tidyr); library(tibble)
+  library(patchwork); library(purrr); library(nlme); library(car); library(broom)
+  
+  # Define species and palette
+  value_col      <- "avg_value"
+  linear_species <- c("Oak", "Beech", "Spruce")
+  exp_species    <- c("Pine")
+  data$species   <- factor(data$species, levels = c(linear_species, exp_species))
+  cb_palette     <- c(
+    "Oak"    = "#E69F00",
+    "Beech"  = "#0072B2",
+    "Spruce" = "#009E73",
+    "Pine"   = "#F0E442"
+  )
+  
+  # Prepare data
+  data <- data %>% mutate(x = bin_median)
+  data_clean <- data %>% filter(!is.na(.data[[value_col]]), is.finite(x))
+  threshold <- 11.5
+  
+  ##########################
+  # Model Fitting by Group #
+  ##########################
+  models_linear <- list()
+  for (sp in linear_species) {
+    sp_data <- data_clean %>% filter(species == sp)
+    models_linear[[sp]] <- lm(avg_value ~ x, data = sp_data)
+  }
+  models_exp <- list()
+  start_list <- list(a = 5, b = 3, c = 0.001)
+  control_params <- nls.control(maxiter = 1200, minFactor = 1e-9)
+  for (sp in exp_species) {
+    sp_data <- data_clean %>% filter(species == sp)
+    if (nrow(sp_data) < 5) { models_exp[[sp]] <- NULL; next }
+    models_exp[[sp]] <- tryCatch({
+      nls(avg_value ~ a + b * exp(c * x), data = sp_data,
+          start = start_list, control = control_params)
+    }, error = function(e) NULL)
+  }
+  
+  ##############################################
+  # Predictions for Panel A
+  ##############################################
+  pred_linear <- bind_rows(lapply(linear_species, function(sp) {
+    df <- data_clean %>% filter(species == sp)
+    x_seq <- seq(min(df$x), max(df$x), length.out = 100)
+    data.frame(species = sp, x = x_seq,
+               pred = predict(models_linear[[sp]], newdata = data.frame(x = x_seq)))
+  }))
+  pred_exp <- bind_rows(lapply(exp_species, function(sp) {
+    mod <- models_exp[[sp]]; if (is.null(mod)) return(NULL)
+    df <- data_clean %>% filter(species == sp)
+    x_seq <- seq(min(df$x), max(df$x), length.out = 100)
+    data.frame(species = sp, x = x_seq,
+               pred = predict(mod, newdata = data.frame(x = x_seq)))
+  }))
+  pred_all <- bind_rows(pred_linear, pred_exp)
+  
+  # Panel A: combined
+  p_combined <- ggplot() +
+    geom_point(data = data_clean,
+               aes(x = x, y = avg_value, color = species, shape = species, size = percentage), alpha = 0.7) +
+    geom_line(data = pred_all,
+              aes(x = x, y = pred, color = species), linewidth = 1) +
+    geom_hline(yintercept = threshold, linetype = "dashed", color = "black", linewidth = 1) +
+    annotate("text", x = min(data_clean$x), y = threshold,
+             label = "median", fontface = "italic",
+             hjust = -0.1, vjust = -0.3, size = 5) +
+    scale_color_manual(values = cb_palette, name = "Species") +
+    scale_shape_manual(values = c("Oak" = 16, "Beech" = 17, "Spruce" = 15, "Pine" = 18), name = "Species") +
+    scale_size_continuous(
+      name = "Pixels per bin (%)",
+      range = c(1, 8),
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    guides(
+      color = guide_legend(order = 1),
+      shape = guide_legend(order = 1),
+      size  = guide_legend(order = 2)
+    ) +
+    labs(x = "soil water potential (kPa)",
+         y = "NDVI quantiles (rank)") +
+    ggtitle("(a)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      plot.background   = element_rect(fill = "white", color = "white"),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank(),
+      legend.background = element_rect(fill = "white", color = "white"),
+      legend.text       = element_text(size = 14),
+      legend.position   = "bottom"
+    )
+  
+  #################################################
+  # Stats for Panels B & C
+  #################################################
+  lin_stats <- bind_rows(lapply(linear_species, function(sp) {
+    mod <- models_linear[[sp]]; summ <- summary(mod)$coefficients
+    intercept <- summ["(Intercept)", "Estimate"]; slope <- summ["x", "Estimate"]
+    se_slope <- summ["x", "Std. Error"]; p_val <- summ["x", "Pr(>|t|)"]
+    x50 <- (threshold - intercept) / slope; abs_sl <- abs(slope)
+    r2 <- summary(mod)$r.squared
+    data.frame(species = sp, x50 = x50, abs_slope = abs_sl,
+               se = se_slope, p_val = p_val, r_squared = r2)
+  }))
+  exp_stats <- bind_rows(lapply(exp_species, function(sp) {
+    mod <- models_exp[[sp]]; if (is.null(mod)) return(NULL)
+    co <- coef(mod); a <- co["a"]; b <- co["b"]; c <- co["c"]
+    x50 <- ifelse((threshold - a) > 0 & b > 0, log((threshold - a)/b)/c, NA)
+    slope50 <- c * (threshold - a); abs_sl <- abs(slope50)
+    df_sp <- data_clean %>% filter(species == sp)
+    r2 <- 1 - sum((df_sp[[value_col]] - predict(mod, df_sp))^2) /
+      sum((df_sp[[value_col]] - mean(df_sp[[value_col]]))^2)
+    dm <- deltaMethod(mod, paste0("c*(a - ", threshold, ")"), parameterNames = c("a","b","c"))
+    se <- dm$SE; df_res <- summary(mod)$df[2]
+    t_val <- slope50 / se; p_val <- 2*(1-pt(abs(t_val), df_res))
+    data.frame(species = sp, x50 = x50, abs_slope = abs_sl,
+               se = se, p_val = p_val, r_squared = r2)
+  }))
+  stats_all <- bind_rows(lin_stats, exp_stats)
+  stats_all$species <- factor(stats_all$species, levels = c(linear_species, exp_species))
+  
+  # Panel B: x50
+  p_x50 <- ggplot(stats_all, aes(x = species, y = x50, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    scale_fill_manual(values = cb_palette, guide = FALSE) +
+    labs(x = "", y = "soil water potential (kPa)") +
+    ggtitle("(b)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank()
+    )
+  
+  # Panel C: absolute slope
+  p_slope <- ggplot(stats_all, aes(x = species, y = abs_slope, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    geom_errorbar(aes(ymin = pmax(0, abs_slope - se), ymax = abs_slope + se), width = 0.2) +
+    geom_text(aes(label = if_else(p_val < 0.05,
+                                  sprintf("%.2f*", r_squared),
+                                  sprintf("%.2f", r_squared)),
+                  y = abs_slope/2), size = 5) +
+    scale_fill_manual(values = cb_palette, guide = FALSE) +
+    labs(x = "", y = "absolute slope") +
+    ggtitle("(c)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank()
+    )
+  
+  # Combine panels
+  final_plot <- (p_combined + (p_x50 / p_slope)) +
+    plot_layout(widths = c(2, 1), guides = "collect") &
+    theme(
+      legend.position       = "bottom",
+      legend.title          = element_blank(),
+      legend.text           = element_text(size = 14),
+      legend.key            = element_rect(fill = "white", color = NA),
+      legend.background     = element_blank(),
+      legend.box.background = element_blank()
+    )
+  
+  print(final_plot)
+  ggsave(output_figure, final_plot, device = "png", width = 10, height = 8, dpi = 300)
+}
+
+plot_Quantiles_PSI_exp_linear_slope_coeff(combined_df, 
+                                          "results/key_displays_July_August/NDVI_Q_PSIbin_exp_linear_coeff_negPSI_depth100.png",
+                                          "results/key_displays_July_August/NDVI_Q_PSIbin_exp_linear_slope_negPSI_depth100.png")
+
+# depth 150
+load("results/Data/all_species_months_depth150.RData")
+combined_df <- combined_df %>% filter(Quantiles > 0)
+combined_df <- combined_df %>% filter(month %in% c("July", "August"))
+
+plot_Quantiles_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output_figure) {
+  # Process data
+  data <- NDVI_PSIbin(data)
+  data <- na.omit(data)
+  
+  # Load libraries
+  library(ggplot2); library(dplyr); library(tidyr); library(tibble)
+  library(patchwork); library(purrr); library(nlme); library(car); library(broom)
+  
+  # Define species and palette
+  value_col      <- "avg_value"
+  linear_species <- c("Oak", "Beech")
+  exp_species    <- c("Spruce", "Pine")
+  data$species   <- factor(data$species, levels = c(linear_species, exp_species))
+  cb_palette     <- c(
+    "Oak"    = "#E69F00",
+    "Beech"  = "#0072B2",
+    "Spruce" = "#009E73",
+    "Pine"   = "#F0E442"
+  )
+  
+  # Prepare data
+  data <- data %>% mutate(x = bin_median)
+  data_clean <- data %>% filter(!is.na(.data[[value_col]]), is.finite(x))
+  threshold <- 11.5
+  
+  ##########################
+  # Model Fitting by Group #
+  ##########################
+  models_linear <- list()
+  for (sp in linear_species) {
+    sp_data <- data_clean %>% filter(species == sp)
+    models_linear[[sp]] <- lm(avg_value ~ x, data = sp_data)
+  }
+  models_exp <- list()
+  start_list <- list(a = 5, b = 3, c = 0.001)
+  control_params <- nls.control(maxiter = 1200, minFactor = 1e-9)
+  for (sp in exp_species) {
+    sp_data <- data_clean %>% filter(species == sp)
+    if (nrow(sp_data) < 5) { models_exp[[sp]] <- NULL; next }
+    models_exp[[sp]] <- tryCatch({
+      nls(avg_value ~ a + b * exp(c * x), data = sp_data,
+          start = start_list, control = control_params)
+    }, error = function(e) NULL)
+  }
+  
+  ##############################################
+  # Predictions for Panel A
+  ##############################################
+  pred_linear <- bind_rows(lapply(linear_species, function(sp) {
+    df <- data_clean %>% filter(species == sp)
+    x_seq <- seq(min(df$x), max(df$x), length.out = 100)
+    data.frame(species = sp, x = x_seq,
+               pred = predict(models_linear[[sp]], newdata = data.frame(x = x_seq)))
+  }))
+  pred_exp <- bind_rows(lapply(exp_species, function(sp) {
+    mod <- models_exp[[sp]]; if (is.null(mod)) return(NULL)
+    df <- data_clean %>% filter(species == sp)
+    x_seq <- seq(min(df$x), max(df$x), length.out = 100)
+    data.frame(species = sp, x = x_seq,
+               pred = predict(mod, newdata = data.frame(x = x_seq)))
+  }))
+  pred_all <- bind_rows(pred_linear, pred_exp)
+  
+  # Panel A: combined
+  p_combined <- ggplot() +
+    geom_point(data = data_clean,
+               aes(x = x, y = avg_value, color = species, shape = species, size = percentage), alpha = 0.7) +
+    geom_line(data = pred_all,
+              aes(x = x, y = pred, color = species), linewidth = 1) +
+    geom_hline(yintercept = threshold, linetype = "dashed", color = "black", linewidth = 1) +
+    annotate("text", x = min(data_clean$x), y = threshold,
+             label = "median", fontface = "italic",
+             hjust = -0.1, vjust = -0.3, size = 5) +
+    scale_color_manual(values = cb_palette, name = "Species") +
+    scale_shape_manual(values = c("Oak" = 16, "Beech" = 17, "Spruce" = 15, "Pine" = 18), name = "Species") +
+    scale_size_continuous(
+      name = "Pixels per bin (%)",
+      range = c(1, 8),
+      labels = scales::percent_format(accuracy = 1)
+    ) +
+    guides(
+      color = guide_legend(order = 1),
+      shape = guide_legend(order = 1),
+      size  = guide_legend(order = 2)
+    ) +
+    labs(x = "soil water potential (kPa)",
+         y = "NDVI quantiles (rank)") +
+    ggtitle("(a)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      plot.background   = element_rect(fill = "white", color = "white"),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank(),
+      legend.background = element_rect(fill = "white", color = "white"),
+      legend.text       = element_text(size = 14),
+      legend.position   = "bottom"
+    )
+  
+  #################################################
+  # Stats for Panels B & C
+  #################################################
+  lin_stats <- bind_rows(lapply(linear_species, function(sp) {
+    mod <- models_linear[[sp]]; summ <- summary(mod)$coefficients
+    intercept <- summ["(Intercept)", "Estimate"]; slope <- summ["x", "Estimate"]
+    se_slope <- summ["x", "Std. Error"]; p_val <- summ["x", "Pr(>|t|)"]
+    x50 <- (threshold - intercept) / slope; abs_sl <- abs(slope)
+    r2 <- summary(mod)$r.squared
+    data.frame(species = sp, x50 = x50, abs_slope = abs_sl,
+               se = se_slope, p_val = p_val, r_squared = r2)
+  }))
+  exp_stats <- bind_rows(lapply(exp_species, function(sp) {
+    mod <- models_exp[[sp]]; if (is.null(mod)) return(NULL)
+    co <- coef(mod); a <- co["a"]; b <- co["b"]; c <- co["c"]
+    x50 <- ifelse((threshold - a) > 0 & b > 0, log((threshold - a)/b)/c, NA)
+    slope50 <- c * (threshold - a); abs_sl <- abs(slope50)
+    df_sp <- data_clean %>% filter(species == sp)
+    r2 <- 1 - sum((df_sp[[value_col]] - predict(mod, df_sp))^2) /
+      sum((df_sp[[value_col]] - mean(df_sp[[value_col]]))^2)
+    dm <- deltaMethod(mod, paste0("c*(a - ", threshold, ")"), parameterNames = c("a","b","c"))
+    se <- dm$SE; df_res <- summary(mod)$df[2]
+    t_val <- slope50 / se; p_val <- 2*(1-pt(abs(t_val), df_res))
+    data.frame(species = sp, x50 = x50, abs_slope = abs_sl,
+               se = se, p_val = p_val, r_squared = r2)
+  }))
+  stats_all <- bind_rows(lin_stats, exp_stats)
+  stats_all$species <- factor(stats_all$species, levels = c(linear_species, exp_species))
+  
+  # Panel B: x50
+  p_x50 <- ggplot(stats_all, aes(x = species, y = x50, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    scale_fill_manual(values = cb_palette, guide = "none") +
+    labs(x = "", y = "soil water potential (kPa)") +
+    ggtitle("(b)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank()
+    )
+  
+  # Panel C: absolute slope
+  p_slope <- ggplot(stats_all, aes(x = species, y = abs_slope, fill = species)) +
+    geom_bar(stat = "identity", width = 0.7) +
+    geom_errorbar(aes(ymin = pmax(0, abs_slope - se), ymax = abs_slope + se), width = 0.2) +
+    geom_text(aes(label = if_else(p_val < 0.05,
+                                  sprintf("%.2f*", r_squared),
+                                  sprintf("%.2f", r_squared)),
+                  y = abs_slope/2), size = 5) +
+    scale_fill_manual(values = cb_palette, guide = FALSE) +
+    labs(x = "", y = "absolute slope") +
+    ggtitle("(c)") +
+    theme_minimal() +
+    theme(
+      plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
+      axis.title        = element_text(face = "bold", size = 16),
+      axis.text         = element_text(color = "black", size = 14),
+      axis.text.x       = element_text(angle = 0, hjust = 0.5),
+      panel.background  = element_rect(fill = "white"),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank()
+    )
+  
+  # Combine panels
+  final_plot <- (p_combined + (p_x50 / p_slope)) +
+    plot_layout(widths = c(2, 1), guides = "collect") &
+    theme(
+      legend.position       = "bottom",
+      legend.title          = element_blank(),
+      legend.text           = element_text(size = 14),
+      legend.key            = element_rect(fill = "white", color = NA),
+      legend.background     = element_blank(),
+      legend.box.background = element_blank()
+    )
+  
+  print(final_plot)
+  ggsave(output_figure, final_plot, device = "png", width = 10, height = 8, dpi = 300)
+}
+
+plot_Quantiles_PSI_exp_linear_slope_coeff(combined_df, 
+                                          "results/key_displays_July_August/NDVI_Q_PSIbin_exp_linear_coeff_negPSI_depth150.png",
+                                          "results/key_displays_July_August/NDVI_Q_PSIbin_exp_linear_slope_negPSI_depth150.png")

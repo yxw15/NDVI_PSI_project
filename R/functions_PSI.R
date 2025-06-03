@@ -119,6 +119,8 @@ NDVI_PSIbin <- function(df, bin_width = 50) {
   
   library(dplyr)
   
+  df <- na.omit(df)
+  
   # Identify correct value column
   value_column <- if ("Quantiles" %in% names(df)) "Quantiles" else "Proportions"
   

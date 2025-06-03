@@ -593,3 +593,16 @@ plot_density_Quantiles_TDiff_raster(data = all_results_df,
 plot_density_TDiff_PSI_raster(data = all_results_df,
                               output_path = "results/density/TDiff_PSI_density_raster.png")
 
+# depth 100
+load("results/Data/all_species_months_depth100.RData")
+combined_df <- combined_df %>% filter(Quantiles > 0 & month == "July")
+plot_density_Quantiles_PSI_linear(data = combined_df,
+                                  output_path = "results/key_displays/Quantiles_PSI_density_linear_depth100.png")
+
+# depth 150
+load("results/Data/all_species_months_depth150.RData")
+combined_df <- combined_df %>% filter(Quantiles > 0 & month == "July")
+plot_density_Quantiles_PSI_linear(data = combined_df,
+                                  output_path = "results/key_displays/Quantiles_PSI_density_linear_depth150.png")
+
+

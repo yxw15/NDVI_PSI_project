@@ -26,7 +26,8 @@ message("📂 Working directory set to: ", getwd())
 dates_start <- "2003-01-01"
 years <- 2003:2024
 # depths <- c(50, 100, 150)
-depths <- c(150)
+depths <- c(50)
+
 message("🔧 Global settings: years ", min(years), "-", max(years), "; depths: ", paste(depths, collapse=", "))
 
 # 🗓️ Month config
