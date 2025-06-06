@@ -630,7 +630,9 @@ for (species in species_list) {
 
 
 # -----------------------------------------------
-# R code: Single composite figure of Clay, Silt, Sand percentages for all species
+# R code: Composite figure with columns = species (Oak, Beech, Spruce, Pine),
+#          rows = fractions (Clay, Silt, Sand), species names atop each column,
+#          single shared legend at the bottom, and no grey border around panels
 # -----------------------------------------------
 
 # 0. Set working directory
@@ -675,135 +677,141 @@ lut <- soil_descrip %>%
   ) %>%
   select(feinbod_code, clay_mid, silt_mid, sand_mid)
 
-# 4. Define a function that returns three ggplots (clay, silt, sand) for a species
-make_three_plots <- function(species, raster_path) {
-  
-  # (a) Load the soil_code raster for this species
+# 4. Function to create clay/silt/sand plots (no individual legends, white backgrounds)
+make_fraction_plots <- function(raster_path) {
+  # (a) Load the soil_code raster
   soil_code <- rast(raster_path)
   
-  # (b) Reclassify into clay/silt/sand midpoints using terra::subst()
-  clay_raster <- subst(
-    x     = soil_code,
-    from  = lut$feinbod_code,
-    to    = lut$clay_mid
-  )
-  names(clay_raster) <- "clay"
+  # (b) Reclassify into clay/silt/sand midpoints
+  clay_r <- subst(soil_code, from = lut$feinbod_code, to = lut$clay_mid)
+  names(clay_r) <- "clay"
+  silt_r <- subst(soil_code, from = lut$feinbod_code, to = lut$silt_mid)
+  names(silt_r) <- "silt"
+  sand_r <- subst(soil_code, from = lut$feinbod_code, to = lut$sand_mid)
+  names(sand_r) <- "sand"
   
-  silt_raster <- subst(
-    x     = soil_code,
-    from  = lut$feinbod_code,
-    to    = lut$silt_mid
-  )
-  names(silt_raster) <- "silt"
-  
-  sand_raster <- subst(
-    x     = soil_code,
-    from  = lut$feinbod_code,
-    to    = lut$sand_mid
-  )
-  names(sand_raster) <- "sand"
-  
-  # (c) Convert each raster to a data.frame for ggplot
-  clay_df <- as.data.frame(clay_raster, xy = TRUE) %>%
+  # (c) Convert each to data.frame & drop NA
+  clay_df <- as.data.frame(clay_r, xy = TRUE) %>%
     rename(value = clay) %>%
     filter(!is.na(value))
-  silt_df <- as.data.frame(silt_raster, xy = TRUE) %>%
+  silt_df <- as.data.frame(silt_r, xy = TRUE) %>%
     rename(value = silt) %>%
     filter(!is.na(value))
-  sand_df <- as.data.frame(sand_raster, xy = TRUE) %>%
+  sand_df <- as.data.frame(sand_r, xy = TRUE) %>%
     rename(value = sand) %>%
     filter(!is.na(value))
   
-  # (d) Common theme modifications
-  common_theme <- theme(
-    axis.text  = element_blank(),
-    axis.ticks = element_blank(),
-    plot.background  = element_rect(fill = "white", color = "white"),
-    panel.background = element_rect(fill = "white"),
-    panel.border     = element_rect(color = "black", fill = NA, linewidth = 0.5),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position  = "top",
-    legend.key.width = unit(1.3, "cm"),
-    legend.margin    = margin(t = 0, r = 20, b = 0, l = 20),
-    legend.text      = element_text(size = 10),
-    legend.title     = element_text(size = 10),
-    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-    strip.text       = element_text(face = "bold", size = 10)
-  )
+  # (d) Base theme for all fraction plots with white background and no panel border color
+  base_theme <- theme_minimal() +
+    theme(
+      axis.text.x        = element_text(angle = 0, hjust = 0.5),
+      plot.background    = element_rect(fill = "white", color = "white"),
+      panel.background   = element_rect(fill = "white"),
+      legend.background  = element_rect(fill = "white", color = "white"),
+      plot.title         = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      plot.subtitle      = element_text(hjust = 0.5, size = 14),
+      axis.title         = element_blank(),
+      axis.text          = element_text(color = "black", size = 14),
+      panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major   = element_blank(),
+      panel.grid.minor   = element_blank(),
+      legend.position    = "bottom",
+      legend.key.width   = unit(1.3, "cm"),    # ← make each legend key wider
+      legend.key.height  = unit(0.5, "cm"),  # ← optionally make it taller as well
+      legend.text        = element_text(size = 14),
+      legend.title        = element_text(size = 14),
+      strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.text         = element_text(face = "bold", size = 12)
+    )
   
-  # (e) Create the three ggplot objects, adding species as subtitle
+  # (e) Create clay plot
   p_clay <- ggplot(clay_df, aes(x = x, y = y, color = value)) +
-    geom_point(size = 0.3) +
+    geom_point(size = 0.5) +
     geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
-    coord_sf() +
+    coord_sf(expand = FALSE) +
     scale_color_gradientn(
       colours = c("white", "lightblue", "dodgerblue", "#0072B2"),
-      name    = "Clay (%)"
+      name    = "clay (%)"
     ) +
-    labs(
-      title    = species,
-      subtitle = "Clay (%)",
-      x = NULL, y = NULL
-    ) +
-    common_theme
+    base_theme
   
+  # (f) Create silt plot
   p_silt <- ggplot(silt_df, aes(x = x, y = y, color = value)) +
-    geom_point(size = 0.3) +
+    geom_point(size = 0.5) +
     geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
-    coord_sf() +
+    coord_sf(expand = FALSE) +
     scale_color_gradientn(
       colours = c("white", "#b9f6ca", "#00bfae", "#00675b"),
-      name    = "Silt (%)"
+      name    = "silt (%)"
     ) +
-    labs(
-      title    = species,
-      subtitle = "Silt (%)",
-      x = NULL, y = NULL
-    ) +
-    common_theme
+    base_theme
   
+  # (g) Create sand plot
   p_sand <- ggplot(sand_df, aes(x = x, y = y, color = value)) +
-    geom_point(size = 0.3) +
+    geom_point(size = 0.5) +
     geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
-    coord_sf() +
+    coord_sf(expand = FALSE) +
     scale_color_gradientn(
       colours = c("white", "#ffe0b2", "orange", "#ff6600"),
-      name    = "Sand (%)"
+      name    = "sand (%)"
     ) +
-    labs(
-      title    = species,
-      subtitle = "Sand (%)",
-      x = NULL, y = NULL
-    ) +
-    common_theme
+    base_theme
   
   return(list(clay = p_clay, silt = p_silt, sand = p_sand))
 }
 
-# 5. Generate all plots for each species, collect into a single list
-species_list <- c("Beech", "Oak", "Pine", "Spruce")
-all_plots <- list()
+# 5. Generate plots for each species in order: Oak, Beech, Spruce, Pine
+species_order <- c("Oak", "Beech", "Spruce", "Pine")
+clay_plots <- list()
+silt_plots <- list()
+sand_plots <- list()
 
-for (sp in species_list) {
-  raster_path <- file.path("soil_map", paste0(sp, "_soilCode_MODIS.tif"))
-  p_list <- make_three_plots(species = sp, raster_path = raster_path)
-  # Append to all_plots in order clay, silt, sand
-  all_plots <- c(all_plots, list(p_list$clay, p_list$silt, p_list$sand))
+for (sp in species_order) {
+  path <- file.path("soil_map", paste0(sp, "_soilCode_MODIS.tif"))
+  p_list <- make_fraction_plots(path)
+  
+  # Add species name as column title (only on clay plots, top row)
+  clay_plots[[sp]] <- p_list$clay +
+    labs(title = sp) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      plot.margin = margin(t = 5, r = 5, b = 2, l = 5)
+    )
+  
+  silt_plots[[sp]] <- p_list$silt + theme(plot.margin = margin(t = 2, r = 5, b = 2, l = 5))
+  sand_plots[[sp]] <- p_list$sand + theme(plot.margin = margin(t = 2, r = 5, b = 5, l = 5))
 }
 
-# 6. Combine into a 4×3 grid: 4 species rows, 3 fractions columns
-composite <- wrap_plots(all_plots, ncol = 3, nrow = 4, guides = "collect") &
-  theme(legend.position = "top")
+# 6. Combine into a single list in row-major order:
+#    Row 1: clay for Oak, Beech, Spruce, Pine
+#    Row 2: silt for Oak, Beech, Spruce, Pine
+#    Row 3: sand for Oak, Beech, Spruce, Pine
+all_plots <- c(
+  clay_plots[species_order],
+  silt_plots[species_order],
+  sand_plots[species_order]
+)
 
-# 7. Display the composite
+# 7. Arrange with patchwork: 3 rows × 4 columns, collect a shared legend at bottom,
+#    and set overall plot background to white (removing any grey border)
+composite <- wrap_plots(all_plots, ncol = 4, nrow = 3, guides = "collect") &
+  theme(
+    legend.position  = "bottom",
+    plot.background   = element_rect(fill = "white", color = NA),
+    plot.margin       = margin(5, 5, 5, 5),      # small margin on all sides
+    panel.spacing     = unit(0, "cm")
+  )
+
+# 8. Display the composite
 print(composite)
 
-# 8. Save the composite figure
+# 9. Save the final composite figure
 ggsave(
   filename = "soil_map/all_species_soil_fractions_composite.png",
   plot     = composite,
-  width    = 12,
-  height   = 16,
-  dpi      = 300
+  width    = 12,   # 4 columns × 3 inches each ≈ 12″ wide
+  height   = 12,    # 3 rows × 3 inches each  ≈ 9″ tall
+  dpi      = 300,
+  bg       = "white"
 )
+
