@@ -5,157 +5,133 @@ library(dplyr)
 library(tidyr)
 library(stringr)
 library(ggplot2)
-library(purrr)
 
-# 1. NDVI export from netcdf
-months_config <- list(
-  July   = list(day = "07-28", NDVI = "../WZMAllDOYs/Quantiles_209.nc"),
-  August = list(day = "08-29", NDVI = "../WZMAllDOYs/Quantiles_241.nc")
-)
-
-out_dir <- "results_whole_Germany"
-if (!dir.exists(out_dir)) dir.create(out_dir)
-
-for (month in names(months_config)) {
-  ndvi <- rast(months_config[[month]]$NDVI)
-  years <- format(time(ndvi), "%Y")
-  names(ndvi) <- paste0("NDVI_", years, "_", month)
-  out_path <- file.path(out_dir, paste0("NDVI_", month, ".tif"))
-  writeRaster(ndvi, filename = out_path, overwrite = TRUE)
-}
-
-# 2. Export PSI and TDiff for each species, month
-species <- c("Beech", "Oak", "Spruce", "Pine")
+# Define
+species <- c("Oak", "Beech", "Spruce", "Pine")
 months <- c("July", "August")
 years <- 2003:2024
-types <- c("psi", "tdiff")
-output_names <- c(psi = "PSI", tdiff = "TDiff")  # All-lowercase names
 
-for (sp in species) {
-  for (mo in months) {
-    for (ty in types) {
-      input_dir <- file.path("results_monthly", mo, sp)
-      tif_files <- file.path(input_dir, paste0(ty, "_", years, ".tif"))
-      existing_idx <- file.exists(tif_files)
-      tif_files_exist <- tif_files[existing_idx]
-      if (length(tif_files_exist) > 0) {
-        raster_stack <- rast(tif_files_exist)
-        layer_years <- years[existing_idx]
-        names(raster_stack) <- paste0(ty, "_", layer_years, "_", mo)
-        out_prefix <- output_names[ty]
-        output_file <- file.path("results_whole_Germany", paste0(sp, "_", out_prefix, "_", mo, ".tif"))
-        writeRaster(raster_stack, filename = output_file, overwrite = TRUE)
-        cat("Saved:", output_file, "\n")
-      } else {
-        cat("No files found for", sp, mo, ty, "\n")
-      }
-    }
-  }
-}
-
-# 3. Species masks
+# Load species masks
 Oak    <- rast("species_map_MODIS/Oak.tif")
 Beech  <- rast("species_map_MODIS/Beech.tif")
 Spruce <- rast("species_map_MODIS/Spruce.tif")
 Pine   <- rast("species_map_MODIS/Pine.tif")
 species_masks <- list(Oak=Oak, Beech=Beech, Spruce=Spruce, Pine=Pine)
 
-# 4. NDVI and PSI filepaths for all species and months
-get_raster_path <- function(sp, var, month) {
-  file.path("results_whole_Germany", paste0(sp, "_", var, "_", month, ".tif"))
+get_psi_path <- function(sp, month) {
+  file.path("results_whole_Germany", paste0(sp, "_PSI_", month, ".tif"))
 }
 
-# 5. All cross-species pairs (NDVI/PSI, NDVI_species != PSI_species)
-species_pairs <- expand.grid(
-  NDVI_species = species,
-  PSI_species  = species,
-  stringsAsFactors = FALSE
-) %>% filter(NDVI_species != PSI_species)
+get_ndvi_path <- function(sp, month) {
+  file.path("results_whole_Germany", paste0("NDVI_", month, ".tif"))
+}
 
-months <- c("July", "August")
-years  <- 2003:2024
-
-results_list <- list()
-
-for (i in seq_len(nrow(species_pairs))) {
-  ndvi_sp <- species_pairs$NDVI_species[i]
-  psi_sp  <- species_pairs$PSI_species[i]
-  cat("Processing NDVI:", ndvi_sp, "PSI:", psi_sp, "\n")
-  
+# Function to process one NDVI_species/PSI_species pair
+process_ndvi_psi_pair <- function(ndvi_species, psi_species, months, years) {
+  mask_r <- species_masks[[ndvi_species]]
+  out_list <- list()
   for (month in months) {
-    # NDVI/PSI rasters for this month/species
-    ndvi_r <- rast(get_raster_path(ndvi_sp, "NDVI", month))
-    psi_r  <- rast(get_raster_path(psi_sp, "PSI", month))
-    mask_r <- species_masks[[ndvi_sp]]
-    
-    ndvi_r <- mask(ndvi_r, mask_r)
-    psi_r  <- mask(psi_r, mask_r)
-    
-    # project PSI if necessary
-    if (!compareGeom(ndvi_r, psi_r, stopOnError = FALSE)) {
-      psi_r <- project(psi_r, ndvi_r)
+    ndvi_file <- file.path("results_whole_Germany", paste0("NDVI_", month, ".tif"))
+    ndvi_r <- rast(ndvi_file)
+    # Project mask to NDVI if needed
+    if (!compareGeom(ndvi_r, mask_r, stopOnError=FALSE)) {
+      mask_r_proj <- project(mask_r, ndvi_r, method="near")
+    } else {
+      mask_r_proj <- mask_r
     }
-    
-    # For all years: stack matching layers (assume same number of layers per month)
-    n_layers <- min(nlyr(ndvi_r), nlyr(psi_r))
+    ndvi_r_masked <- mask(ndvi_r, mask_r_proj)
+    psi_file <- get_psi_path(psi_species, month)
+    psi_r <- rast(psi_file)
+    # Project PSI to NDVI grid if needed
+    if (!compareGeom(ndvi_r, psi_r, stopOnError=FALSE)) {
+      psi_r_proj <- project(psi_r, ndvi_r)
+    } else {
+      psi_r_proj <- psi_r
+    }
+    psi_r_masked <- mask(psi_r_proj, mask_r_proj)
+    n_layers <- min(nlyr(ndvi_r_masked), nlyr(psi_r_masked))
     for (lyr in seq_len(n_layers)) {
-      ndvi_lyr <- ndvi_r[[lyr]]
-      psi_lyr  <- psi_r[[lyr]]
+      ndvi_lyr <- ndvi_r_masked[[lyr]]
+      psi_lyr  <- psi_r_masked[[lyr]]
       year     <- years[lyr]
-      
-      # Layer names for tracking
       names(ndvi_lyr) <- "NDVI"
       names(psi_lyr)  <- "PSI"
       comb_r <- c(ndvi_lyr, psi_lyr)
       df <- as.data.frame(comb_r, xy=TRUE, na.rm=TRUE)
-      df$NDVI_species <- ndvi_sp
-      df$PSI_species  <- psi_sp
+      df$NDVI_species <- ndvi_species
+      df$PSI_species  <- psi_species
       df$Year         <- year
       df$Month        <- month
-      results_list[[paste(ndvi_sp, psi_sp, month, year, sep = "_")]] <- df
+      out_list[[paste0(month, "_", year)]] <- df
     }
   }
+  dplyr::bind_rows(out_list)
 }
 
-# 6. Combine to big dataframe
-big_df <- bind_rows(results_list)
+# Generate all pairs (exclude self-pairs if needed)
+species_pairs <- expand.grid(
+  NDVI_species = species,
+  PSI_species  = species,
+  stringsAsFactors = FALSE
+)
 
-# 7. Bin and summarize NDVI by PSI for each NDVI_species, PSI_species, Year, Month
+# Process all pairs and combine
+all_results <- list()
+for (i in seq_len(nrow(species_pairs))) {
+  ndvi_sp <- species_pairs$NDVI_species[i]
+  psi_sp  <- species_pairs$PSI_species[i]
+  cat("Processing NDVI:", ndvi_sp, "PSI:", psi_sp, "\n")
+  all_results[[paste(ndvi_sp, psi_sp, sep = "_")]] <- process_ndvi_psi_pair(ndvi_sp, psi_sp, months, years)
+}
+big_df <- bind_rows(all_results)
+
+write.csv(big_df, "results_whole_Germany/NDVI_PSI_crossspecies.csv", row.names = FALSE)
+
+
+# Binning and summary - updated!
 NDVI_PSIbin_multi <- function(df, bin_width = 50) {
+  library(dplyr)
+  
   df <- na.omit(df)
-  # Bin PSI
   psi_min <- floor(min(df$PSI, na.rm = TRUE))
   psi_max <- ceiling(max(df$PSI, na.rm = TRUE))
   bin_breaks <- seq(psi_min, psi_max, by = bin_width)
   df <- df %>%
     mutate(PSI_bin = cut(PSI, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
-  species_totals <- df %>%
-    group_by(NDVI_species, PSI_species, Year, Month) %>%
-    summarise(total_pixels = n(), .groups = "drop")
+  
+  # 1. Calculate total pixel count per NDVI_species and PSI_species
+  total_pixel_df <- df %>%
+    group_by(NDVI_species, PSI_species) %>%
+    summarise(total_pixel = n(), .groups = "drop")
+  
+  # 2. Calculate mean NDVI, count, and median of each bin
   meanNDVI_PSIbin_species <- df %>%
-    group_by(NDVI_species, PSI_species, Year, Month, PSI_bin) %>%
+    group_by(NDVI_species, PSI_species, PSI_bin) %>%
     summarise(
       avg_value = mean(NDVI, na.rm = TRUE),
       count = n(),
       .groups = 'drop'
     ) %>%
+    # 3. Add the total pixel count
+    left_join(total_pixel_df, by = c("NDVI_species", "PSI_species")) %>%
+    # 4. Calculate pixel percentage
     mutate(
+      pixel_percentage = count / total_pixel,
       bin_median = sapply(as.character(PSI_bin), function(bin_label) {
         nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
         mean(nums)
       })
     ) %>%
-    left_join(species_totals, by = c("NDVI_species", "PSI_species", "Year", "Month")) %>%
-    mutate(percentage = count / total_pixels) %>%
-    filter(percentage >= 0.001) %>%
-    select(NDVI_species, PSI_species, Year, Month, PSI_bin, bin_median, avg_value, count, total_pixels, percentage)
+    # 5. Filter rows with pixel_percentage >= 0.001
+    filter(pixel_percentage >= 0.001)
   
   return(meanNDVI_PSIbin_species)
 }
 
-big_bin_df <- NDVI_PSIbin_multi(big_df)
 
-# 8. Colorblind-friendly palette
+big_bin_df <- NDVI_PSIbin_multi(big_df)
+write.csv(big_bin_df, "results_whole_Germany/NDVI_PSI_bin_summary_crossspecies.csv", row.names = FALSE)
+
 cb_palette <- c(
   "Oak"    = "#E69F00",
   "Beech"  = "#0072B2",
@@ -163,26 +139,179 @@ cb_palette <- c(
   "Pine"   = "#F0E442"
 )
 
-# 9. Plot: NDVI (y) vs. PSI bin median (x), color = NDVI_species, facet = NDVI_species vs PSI_species
-p <- ggplot(big_bin_df, aes(x = bin_median, y = avg_value, color = NDVI_species)) +
-  geom_point(size = 1.5, alpha = 0.8) +
-  scale_color_manual(values = cb_palette) +
-  facet_grid(NDVI_species ~ PSI_species, labeller = label_both) +
-  labs(
-    x = "Soil water potential (kPa)",
-    y = "NDVI",
-    color = "NDVI species"
+
+big_bin_df$NDVI_species <- factor(big_bin_df$NDVI_species, levels = c("Oak", "Beech", "Spruce", "Pine"))
+big_bin_df$PSI_species  <- factor(big_bin_df$PSI_species,  levels = c("Oak", "Beech", "Spruce", "Pine"))
+
+big_bin_df$pixel_percent <- big_bin_df$pixel_percentage * 100
+
+library(ggplot2)
+
+ggplot(big_bin_df, aes(
+  x = bin_median,
+  y = avg_value,
+  color = PSI_species,
+  shape = PSI_species,
+  size  = pixel_percent
+)) +
+  geom_point(alpha = 0.85) +
+  scale_color_manual(values = cb_palette, name = "PSI species") +
+  scale_shape_manual(
+    values = c("Oak" = 16, "Beech" = 17, "Spruce" = 15, "Pine" = 18),
+    name = "species of soil water potential"
   ) +
-  theme_minimal(base_size = 12) +
+  scale_size_continuous(
+    name = "pixel percentage (%)",
+    range = c(1, 8)
+  ) +
+  facet_wrap(~ NDVI_species, nrow = 2, ncol = 2) +
+  labs(
+    x = "soil water potential (kPa)",
+    y = "NDVI quantiles"
+  ) +
   theme(
-    strip.text = element_text(size = 8)
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    plot.background = element_rect(fill = "white", color = "white"),
+    panel.background = element_rect(fill = "white"),
+    legend.background = element_rect(fill = "white", color = "white"),
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+    plot.subtitle = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(face = "bold", size = 16),
+    axis.text = element_text(color = "black", size = 14),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "right",
+    legend.text = element_text(size = 14),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    strip.text = element_text(face = "bold", size = 12)
+  ) +
+  guides(
+    color = guide_legend(
+      override.aes = list(size = 6)  # Make legend points larger for color/shape legend
+    ),
+    shape = guide_legend(
+      override.aes = list(size = 6)  # Make legend points larger for color/shape legend
+    ),
+    size = guide_legend()            # Keeps the size legend as is
   )
-print(p)
 
-# Optionally, save
-ggsave("results_whole_Germany/NDVI_vs_PSI_crossspecies.png", p, width = 12, height = 8, dpi = 300)
+# Save outputs
+ggsave("results_whole_Germany/NDVI_vs_PSI_crossspecies_facet_by_NDVI.png", width = 12, height = 8, dpi = 300)
 
-# 10. Save summary table if desired
-write.csv(big_bin_df, "results_whole_Germany/NDVI_PSI_bin_summary_crossspecies.csv", row.names = FALSE)
+big_bin_df <- read.csv("results_whole_Germany/NDVI_PSI_bin_summary_crossspecies.csv")
 
-cat("All done!\n")
+
+library(dplyr)
+library(broom)
+
+fit_best_curve <- function(df) {
+  # Fit linear
+  fit_lm <- lm(avg_value ~ bin_median, data = df)
+  aic_lm <- AIC(fit_lm)
+  
+  # Fit exponential
+  fit_exp <- tryCatch({
+    nls(avg_value ~ a + b * exp(c * bin_median),
+        data = df,
+        start = list(a = min(df$avg_value), 
+                     b = (max(df$avg_value)-min(df$avg_value))/2, 
+                     c = 0.001),
+        control = nls.control(maxiter = 1000))
+  }, error = function(e) NULL)
+  
+  # Model selection logic
+  use_exp <- FALSE
+  if (!is.null(fit_exp)) {
+    aic_exp <- AIC(fit_exp)
+    # significance check for 'c'
+    tidy_exp <- broom::tidy(fit_exp)
+    c_row <- tidy_exp[tidy_exp$term == "c", ]
+    if (aic_exp < aic_lm && !is.null(c_row$p.value) && c_row$p.value < 0.05) {
+      use_exp <- TRUE
+    }
+  }
+  
+  # Prediction grid (finer than original)
+  pred_grid <- data.frame(bin_median = seq(min(df$bin_median), max(df$bin_median), length.out = 100))
+  if (use_exp) {
+    pred_grid$fit <- predict(fit_exp, newdata = pred_grid)
+    pred_grid$model <- "exponential"
+  } else {
+    pred_grid$fit <- predict(fit_lm, newdata = pred_grid)
+    pred_grid$model <- "linear"
+  }
+  pred_grid
+}
+
+library(tidyr)
+library(purrr)
+
+big_bin_df <- na.omit(big_bin_df)
+
+fitted_df <- big_bin_df %>%
+  group_by(NDVI_species, PSI_species) %>%
+  group_modify(~ fit_best_curve(.x)) %>%
+  ungroup()
+
+
+cb_palette <- c(
+  "Oak"    = "#E69F00",
+  "Beech"  = "#0072B2",
+  "Spruce" = "#009E73",
+  "Pine"   = "#F0E442"
+)
+
+ggplot(big_bin_df, aes(
+  x = bin_median,
+  y = avg_value,
+  color = PSI_species,
+  shape = PSI_species,
+  size  = pixel_percent
+)) +
+  geom_point(alpha = 0.85) +
+  # Fitted lines:
+  geom_line(data = fitted_df, 
+            aes(x = bin_median, y = fit, color = PSI_species, linetype = model, group = interaction(PSI_species, model)),
+            linewidth = 1, inherit.aes = FALSE) +
+  scale_color_manual(values = cb_palette, name = "species of soil water potential") +
+  scale_shape_manual(
+    values = c("Oak" = 16, "Beech" = 17, "Spruce" = 15, "Pine" = 18),
+    name = "species of soil water potential"
+  ) +
+  scale_size_continuous(
+    name = "pixel percentage (%)",
+    range = c(1, 8)
+  ) +
+  facet_wrap(~ NDVI_species, nrow = 2, ncol = 2) +
+  labs(
+    x = "soil water potential (kPa)",
+    y = "NDVI quantiles"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    plot.background = element_rect(fill = "white", color = "white"),
+    panel.background = element_rect(fill = "white"),
+    legend.background = element_rect(fill = "white", color = "white"),
+    plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+    plot.subtitle = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(face = "bold", size = 16),
+    axis.text = element_text(color = "black", size = 14),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.position = "right",
+    legend.text = element_text(size = 14),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    strip.text = element_text(face = "bold", size = 12)
+  ) +
+  guides(
+    color = guide_legend(
+      override.aes = list(size = 6)
+    ),
+    # shape = guide_legend(
+    #   override.aes = list(size = 6)
+    # ),
+    size = guide_legend()
+  )
+ggsave("results_whole_Germany/NDVI_vs_PSI_crossspecies_facet_by_NDVI_fitted_line.png", width = 12, height = 8, dpi = 300)

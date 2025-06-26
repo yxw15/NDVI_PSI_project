@@ -815,3 +815,192 @@ ggsave(
   bg       = "white"
 )
 
+# -----------------------------------------------
+# Composite + Standardized Bar Plot of Soil Texture Fractions
+# -----------------------------------------------
+
+# 0. Set working directory
+setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
+
+# 1. Load libraries
+library(terra)
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(patchwork)
+
+# 2. Read Germany boundary
+boundary_germany <- ne_countries(
+  scale = "medium",
+  country = "Germany",
+  returnclass = "sf"
+)
+
+# 3. Read LUT
+soil_descrip <- read.csv("soil_map/feinbod_lookup_with_english.csv", stringsAsFactors = FALSE)
+soil_texture <- read.csv("soil_map/soil_texture_classes.csv", stringsAsFactors = FALSE)
+
+lut <- soil_descrip %>%
+  select(feinbod_code, feinbod) %>%
+  inner_join(soil_texture, by = c("feinbod" = "code")) %>%
+  mutate(
+    clay_mid = (clay_lower + clay_upper) / 2,
+    silt_mid = (silt_lower + silt_upper) / 2,
+    sand_mid = (sand_lower + sand_upper) / 2
+  ) %>%
+  select(feinbod_code, clay_mid, silt_mid, sand_mid)
+
+# 4. Plot + data extraction function
+make_fraction_plots <- function(raster_path) {
+  soil_code <- rast(raster_path)
+  
+  clay_r <- subst(soil_code, from = lut$feinbod_code, to = lut$clay_mid); names(clay_r) <- "clay"
+  silt_r <- subst(soil_code, from = lut$feinbod_code, to = lut$silt_mid); names(silt_r) <- "silt"
+  sand_r <- subst(soil_code, from = lut$feinbod_code, to = lut$sand_mid); names(sand_r) <- "sand"
+  
+  clay_df <- as.data.frame(clay_r, xy = TRUE) %>% rename(value = clay) %>% filter(!is.na(value))
+  silt_df <- as.data.frame(silt_r, xy = TRUE) %>% rename(value = silt) %>% filter(!is.na(value))
+  sand_df <- as.data.frame(sand_r, xy = TRUE) %>% rename(value = sand) %>% filter(!is.na(value))
+  
+  base_theme <- theme_minimal() +
+    theme(
+      axis.text.x        = element_text(angle = 0, hjust = 0.5),
+      plot.background    = element_rect(fill = "white", color = "white"),
+      panel.background   = element_rect(fill = "white"),
+      legend.background  = element_rect(fill = "white", color = "white"),
+      plot.title         = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+      axis.title         = element_blank(),
+      axis.text          = element_text(color = "black", size = 14),
+      panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major   = element_blank(),
+      panel.grid.minor   = element_blank(),
+      legend.position    = "bottom",
+      legend.key.width   = unit(1.3, "cm"),
+      legend.key.height  = unit(0.5, "cm"),
+      legend.text        = element_text(size = 14),
+      legend.title       = element_text(size = 14),
+      strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.text         = element_text(face = "bold", size = 12)
+    )
+  
+  p_clay <- ggplot(clay_df, aes(x = x, y = y, color = value)) +
+    geom_point(size = 0.5) +
+    geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
+    coord_sf(expand = FALSE) +
+    scale_color_gradientn(
+      colours = c("white", "lightblue", "dodgerblue", "#0072B2"),
+      name = "clay (%)"
+    ) + base_theme
+  
+  p_silt <- ggplot(silt_df, aes(x = x, y = y, color = value)) +
+    geom_point(size = 0.5) +
+    geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
+    coord_sf(expand = FALSE) +
+    scale_color_gradientn(
+      colours = c("white", "#b9f6ca", "#00bfae", "#00675b"),
+      name = "silt (%)"
+    ) + base_theme
+  
+  p_sand <- ggplot(sand_df, aes(x = x, y = y, color = value)) +
+    geom_point(size = 0.5) +
+    geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
+    coord_sf(expand = FALSE) +
+    scale_color_gradientn(
+      colours = c("white", "#ffe0b2", "orange", "#ff6600"),
+      name = "sand (%)"
+    ) + base_theme
+  
+  return(list(
+    clay = p_clay, silt = p_silt, sand = p_sand,
+    clay_df = clay_df, silt_df = silt_df, sand_df = sand_df
+  ))
+}
+
+# 5. Generate plots and collect data
+species_order <- c("Oak", "Beech", "Spruce", "Pine")
+clay_plots <- list(); silt_plots <- list(); sand_plots <- list()
+soil_fraction_df <- data.frame()
+
+for (sp in species_order) {
+  path <- file.path("soil_map", paste0(sp, "_soilCode_MODIS.tif"))
+  p_list <- make_fraction_plots(path)
+  
+  clay_plots[[sp]] <- p_list$clay + labs(title = sp) +
+    theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+          plot.margin = margin(t = 5, r = 5, b = 2, l = 5))
+  
+  silt_plots[[sp]] <- p_list$silt + theme(plot.margin = margin(t = 2, r = 5, b = 2, l = 5))
+  sand_plots[[sp]] <- p_list$sand + theme(plot.margin = margin(t = 2, r = 5, b = 5, l = 5))
+  
+  soil_fraction_df <- bind_rows(
+    soil_fraction_df,
+    p_list$clay_df %>% mutate(species = sp, fraction = "clay") %>% select(species, fraction, value),
+    p_list$silt_df %>% mutate(species = sp, fraction = "silt") %>% select(species, fraction, value),
+    p_list$sand_df %>% mutate(species = sp, fraction = "sand") %>% select(species, fraction, value)
+  )
+}
+
+# 6. Combine into composite
+all_plots <- c(clay_plots[species_order], silt_plots[species_order], sand_plots[species_order])
+
+composite <- wrap_plots(all_plots, ncol = 4, nrow = 3, guides = "collect") &
+  theme(
+    legend.position = "bottom",
+    plot.background = element_rect(fill = "white", color = NA),
+    plot.margin     = margin(5, 5, 5, 5),
+    panel.spacing   = unit(0, "cm")
+  )
+
+# 7. Display & save composite
+print(composite)
+ggsave("soil_map/all_species_soil_fractions_composite.png", composite, width = 12, height = 12, dpi = 300, bg = "white")
+
+# 8. Save raw data
+write.csv(soil_fraction_df, "soil_map/soil_fraction_values.csv", row.names = FALSE)
+
+# 9. Standardized stacked bar plot
+mean_fraction_df <- soil_fraction_df %>%
+  group_by(species, fraction) %>%
+  summarise(mean_value = mean(value, na.rm = TRUE), .groups = "drop") %>%
+  group_by(species) %>%
+  mutate(proportion = 100 * mean_value / sum(mean_value)) %>%
+  ungroup() %>%
+  mutate(
+    species  = factor(species, levels = c("Oak", "Beech", "Spruce", "Pine")),
+    fraction = factor(fraction, levels = c("clay", "silt", "sand"))
+  )
+
+# 10. Theme for bar plot (with Y-axis title)
+bar_theme <- theme_minimal() +
+  theme(
+    axis.text.x        = element_text(angle = 0, hjust = 0.5, size = 14, color = "black"),
+    axis.text.y        = element_text(color = "black", size = 14),
+    axis.title.x       = element_blank(),
+    axis.title.y       = element_text(color = "black", size = 14),
+    plot.background    = element_rect(fill = "white", color = "white"),
+    panel.background   = element_rect(fill = "white"),
+    panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.5),
+    panel.grid.major   = element_blank(),
+    panel.grid.minor   = element_blank(),
+    plot.title         = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+    legend.position    = "top",
+    legend.key.width   = unit(1.3, "cm"),
+    legend.key.height  = unit(0.5, "cm"),
+    legend.text        = element_text(size = 14),
+    legend.title       = element_text(size = 14),
+    legend.background  = element_rect(fill = "white", color = "white"),
+    strip.background   = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    strip.text         = element_text(face = "bold", size = 12)
+  )
+
+bar_plot <- ggplot(mean_fraction_df, aes(x = species, y = proportion, fill = fraction)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_fill_manual(values = c("clay" = "#0072B2", "silt" = "#00bfae", "sand" = "#ff6600")) +
+  labs(title = "", y = "percentage (%)") +
+  bar_theme
+
+# 11. Display & save bar plot
+print(bar_plot)
+ggsave("soil_map/soil_texture_barplot_standardized.png", bar_plot, width = 8, height = 6, dpi = 300, bg = "white")

@@ -3,6 +3,9 @@ library(ggplot2)
 library(tidyr)
 library(stringr)
 
+setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
+load("results/Data/All_species_month_year_Quantiles_PSI_TDiff.RData")
+
 # Define color palette for species (Title Case)
 cb_palette <- c(
   "Oak"    = "#E69F00",
@@ -19,7 +22,7 @@ summer_df <- final_df %>%
 summary_df <- summer_df %>%
   group_by(species) %>%
   summarise(
-    Mean_Quantiles             = mean(Quantiles, na.rm = TRUE),
+    # Mean_Quantiles             = mean(Quantiles, na.rm = TRUE),
     Mean_Soil_Water_Potential  = mean(soil_water_potential, na.rm = TRUE),
     Mean_Transpiration_Deficit = mean(transpiration_deficit, na.rm = TRUE)
   ) %>%
@@ -37,7 +40,7 @@ summary_long <- summary_df %>%
   ) %>%
   mutate(
     Parameter = case_when(
-      Parameter == "Mean_Quantiles"              ~ "NDVI quantiles",
+      # Parameter == "Mean_Quantiles"              ~ "NDVI quantiles",
       Parameter == "Mean_Soil_Water_Potential"   ~ "Soil water potential",
       Parameter == "Mean_Transpiration_Deficit"  ~ "Transpiration deficit",
       TRUE                                       ~ Parameter

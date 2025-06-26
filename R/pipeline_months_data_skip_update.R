@@ -1,11 +1,3 @@
-# -----------------------------------------------------------------------------
-# Title: NDVI, PSI, and TDiff Multi-Depth Processing Script
-# Description:
-#   Processes NDVI quantiles, soil water potential (PSI), and temperature
-#   difference (TDiff) data for multiple tree species across defined months and depths.
-#   Depths: 50 cm, 100 cm, 150 cm. Skips existing outputs.
-# -----------------------------------------------------------------------------
-
 # 🎉 Start Script
 message("🎉 Starting NDVI-PSI-TDiff multi-depth processing script...")
 
@@ -16,11 +8,9 @@ library(dplyr)
 library(tidyr)
 library(reshape2)
 library(ncdf4)
-message("📚 Libraries loaded: terra, ggplot2, dplyr, tidyr, reshape2, ncdf4")
 
 # 📂 Set working directory
 setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
-message("📂 Working directory set to: ", getwd())
 
 # 🔧 Global parameters
 dates_start <- "2003-01-01"
@@ -28,17 +18,14 @@ years <- 2003:2024
 # depths <- c(50, 100, 150)
 depths <- c(50)
 
-message("🔧 Global settings: years ", min(years), "-", max(years), "; depths: ", paste(depths, collapse=", "))
-
 # 🗓️ Month config
 months_config <- list(
-  April  = list(day="04-23", NDVI="../WZMAllDOYs/Quantiles_113.nc"),   # 🌱
-  May    = list(day="05-25", NDVI="../WZMAllDOYs/Quantiles_145.nc"),   # ☀️
-  June   = list(day="06-26", NDVI="../WZMAllDOYs/Quantiles_177.nc"),   # 🌻
-  July   = list(day="07-28", NDVI="../WZMAllDOYs/Quantiles_209.nc"),   # 🌳
-  August = list(day="08-29", NDVI="../WZMAllDOYs/Quantiles_241.nc")    # 🍂
+  April  = list(day="04-23", NDVI="../WZMAllDOYs/Quantiles_113.nc"),
+  May    = list(day="05-25", NDVI="../WZMAllDOYs/Quantiles_145.nc"),
+  June   = list(day="06-26", NDVI="../WZMAllDOYs/Quantiles_177.nc"),
+  July   = list(day="07-28", NDVI="../WZMAllDOYs/Quantiles_209.nc"),
+  August = list(day="08-29", NDVI="../WZMAllDOYs/Quantiles_241.nc")
 )
-message("🗓️ Months configured: ", paste(names(months_config), collapse=", "))
 
 # 🌳 Species config
 species_config <- list(
@@ -55,14 +42,9 @@ species_config <- list(
                 tdiff="../Allan_Yixuan/TDiffsum_AMJJA_8days_Ki_bfv20032024_compressed.nc",
                 mask="species_map_MODIS//Pine.tif")
 )
-message("🌳 Species configured: ", paste(names(species_config), collapse=", "))
 
-# 📁 Utility: ensure directory exists
 ensure_directory <- function(path) {
-  if (!dir.exists(path)) {
-    dir.create(path, recursive=TRUE)
-    message("📁 Created directory: ", path)
-  }
+  if (!dir.exists(path)) dir.create(path, recursive=TRUE)
 }
 
 # -----------------------------------------------------------------------------
@@ -189,27 +171,20 @@ process_species <- function(species, month_name, depth_val) {
   
   out_dir <- file.path(sprintf("results_monthly_%d", depth_val), month_name, species)
   ensure_directory(out_dir)
-  rdata_fp <- file.path(out_dir, sprintf("NDVI_PSI_TDiff_%s_depth%d.RData",
-                                         gsub("-","",mo_cfg$day), depth_val))
+  rdata_fp <- file.path(out_dir, sprintf("NDVI_PSI_TDiff_%s_depth%d.RData", gsub("-","", mo_cfg$day), depth_val))
   
-  # skip if already done
-  if (file.exists(rdata_fp) && length(list.files(out_dir, "\\.tif$")) == length(years)*3) {
-    message("   🎯 Already processed: ", species, " @ ", depth_val)
+  if (file.exists(rdata_fp)) {
+    message("🎯 Already processed: ", species, " @ ", depth_val, " - skipping all processing.")
     load(rdata_fp)
     return(species_df)
   }
   
-  # process PSI and TDiff
   psi_df   <- transfer_psi_to_df(sp_cfg$psi)
   tdiff_df <- transfer_tdiff_to_df(sp_cfg$tdiff)
-  save_psi_raster(psi_df,   mo_cfg$day, depth_val, out_dir)
+  save_psi_raster(psi_df, mo_cfg$day, depth_val, out_dir)
   save_tdiff_raster(tdiff_df, mo_cfg$day, depth_val, out_dir)
   
-  # combine with NDVI per year
-  lst <- lapply(years, process_NDVI_PSI_TDiff_species_year,
-                NDVI_file=mo_cfg$NDVI,
-                species=species,
-                out_dir=out_dir)
+  lst <- lapply(years, process_NDVI_PSI_TDiff_species_year, NDVI_file=mo_cfg$NDVI, species=species, out_dir=out_dir)
   species_df <- bind_rows(lst) %>% mutate(depth=depth_val)
   save(species_df, file=rdata_fp)
   message("📦 Saved species RData: ", rdata_fp)
