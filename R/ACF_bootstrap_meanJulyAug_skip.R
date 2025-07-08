@@ -154,7 +154,7 @@ generateACFPlot <- function(acf_combined, ci_summary, lag.max, species, var_shor
                        labels = sort(unique(acf_combined_filtered$LagNum))) +
     coord_cartesian(ylim = c(-1, 1)) +
     labs(title = paste("Pixel-wise ACF with Bootstrapped CI -", species, var_short),
-         x = "Lag", y = "ACF") +
+         x = "Lag (year)", y = "ACF") +
     theme_minimal(base_size = 14) +
     theme(
       axis.text.x = element_text(angle = 0, hjust = 0.5),
@@ -207,16 +207,13 @@ processDataFrame <- function(df, parameter_col, lag.max = 21, n_boot = 1000, alp
 # =============================================================================
 # Execution: Loop Over Species and Parameters with Skip Logic
 # =============================================================================
-# species_list <- c("Oak", "Beech", "Pine", "Spruce")
+species_list <- c("Oak", "Beech", "Pine", "Spruce")
 
-# parameters   <- c("mean_soil_water_potential", "mean_transpiration_deficit", "mean_Quantiles")
-# var_names    <- c("mean_soil_water_potential" = "PSI",
-#                   "mean_transpiration_deficit"  = "TDiff",
-#                   "mean_Quantiles"              = "Q")
+parameters   <- c("mean_soil_water_potential", "mean_transpiration_deficit", "mean_Quantiles")
+var_names    <- c("mean_soil_water_potential" = "PSI",
+                  "mean_transpiration_deficit"  = "TDiff",
+                  "mean_Quantiles"              = "Q")
 
-species_list <- c("Pine")
-parameters   <- c("mean_Quantiles")
-var_names    <- c("mean_Quantiles"  = "Q")
 
 out_dir      <- "results/key_displays_July_August"
 

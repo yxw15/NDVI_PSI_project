@@ -15,8 +15,7 @@ setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project"
 # 🔧 Global parameters
 dates_start <- "2003-01-01"
 years <- 2003:2024
-# depths <- c(50, 100, 150)
-depths <- c(50)
+depths <- c(50, 100, 150)
 
 # 🗓️ Month config
 months_config <- list(
@@ -34,13 +33,13 @@ species_config <- list(
                 mask="species_map_MODIS/Beech.tif"),
   Oak    = list(psi="../Allan_Yixuan/PSImean_AMJJA_8days_Ei_bfv_20032024_compressed.nc",
                 tdiff="../Allan_Yixuan/TDiffsum_AMJJA_8days_Ei_bfv20032024_compressed.nc",
-                mask="species_map_MODIS//Oak.tif"),
+                mask="species_map_MODIS/Oak.tif"),
   Spruce = list(psi="../Allan_Yixuan/PSImean_AMJJA_8days_Fi_bfv_20032024_compressed.nc",
                 tdiff="../Allan_Yixuan/TDiffsum_AMJJA_8days_Fi_bfv20032024_compressed.nc",
-                mask="species_map_MODIS//Spruce.tif"),
+                mask="species_map_MODIS/Spruce.tif"),
   Pine   = list(psi="../Allan_Yixuan/PSImean_AMJJA_8days_Ki_bfv_20032024_compressed.nc",
                 tdiff="../Allan_Yixuan/TDiffsum_AMJJA_8days_Ki_bfv20032024_compressed.nc",
-                mask="species_map_MODIS//Pine.tif")
+                mask="species_map_MODIS/Pine.tif")
 )
 
 ensure_directory <- function(path) {
