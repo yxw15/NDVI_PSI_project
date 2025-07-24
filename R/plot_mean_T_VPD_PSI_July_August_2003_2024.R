@@ -201,7 +201,7 @@ mean_vpd_maps  <- list()
 # 5) Loop over species
 for (sp in species_list) {
   # read one mask (assume same extent for both years)
-  mask_r <- rast(sprintf("results/%s/NDVI_mask/NDVI_%d_mask.tif", sp, years[1]))
+  mask_r <- rast(sprintf("species_map_MODIS/%s.tif", sp, years[1]))
   
   tmp_list  <- list()
   vpd_list  <- list()

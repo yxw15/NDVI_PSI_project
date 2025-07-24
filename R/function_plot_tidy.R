@@ -46,7 +46,8 @@ my_theme <- theme_minimal() +
 # Data Summarizing Functions
 # =============================================================================
 
-df_average_year <- function(df_all) {
+df_average_year <- function(df_all) 
+  {
   # Determine correct column for quantile/proportion
   value_column <- if ("Quantiles" %in% names(df_all)) "Quantiles" else if ("Proportions" %in% names(df_all)) "Proportions" else stop("Neither Quantiles nor Proportions column found.")
   
@@ -64,7 +65,8 @@ df_average_year <- function(df_all) {
   return(df_avg)
 }
 
-df_average_year_species <- function(df_all) {
+df_average_year_species <- function(df_all) 
+  {
   value_column <- if ("Quantiles" %in% names(df_all)) "Quantiles" else if ("Proportions" %in% names(df_all)) "Proportions" else stop("Neither Quantiles nor Proportions column found.")
   
   avg_column_name <- if (value_column == "Quantiles") "avg_quantile" else "avg_proportion"

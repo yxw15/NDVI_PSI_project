@@ -2508,6 +2508,7 @@ plot_density_Quantiles_TDiff_linear <- function(data, tdiff_bin_width = 3, outpu
 }
 
 plot_species_distribution(all_results_df, "results/key_displays/species_map.png")
+
 plot_species_distribution(all_df, "results/key_displays/species_map.png")
 
 plot_moran_I_distance("results_moran/data", "results/key_displays/moran_distance.png")
@@ -3740,7 +3741,6 @@ plot_density_Quantiles_TDiff_linear(df,
 
 
 ##### Change the size of point based on percentage of pixels of each bin
-
 plot_Quantiles_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output_figure) {
   # Process data
   data <- NDVI_PSIbin(data)
