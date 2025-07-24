@@ -726,301 +726,219 @@ plot_yearly_mean_linear_coeffs <- function(df_all, output_path) {
 
 plot_yearly_mean_linear_coeffs(data, "results_rootzone/Figures/coeffs_yearly_mean.png")
 
-### S7 AIC ###
-NDVI_PSIbin <- function(df, bin_width = 50) {
-  value_column <- if ("Quantiles" %in% names(df)) "Quantiles" else "Proportions"
+### S7 soil texture composition ###
+plot_soil_fraction_composite <- function(
+    species_order = c("Oak", "Beech", "Spruce", "Pine"),
+    soil_map_dir = "soil_map",
+    result_data_dir = "results_rootzone/Data",
+    result_fig_dir = "results_rootzone/Figures",
+    lut_path = file.path(soil_map_dir, "feinbod_lookup_with_english.csv"),
+    texture_path = file.path(soil_map_dir, "soil_texture_classes.csv"),
+    output_plot = file.path(result_fig_dir, "all_species_soil_fractions_composite.png"),
+    output_csv  = file.path(result_data_dir, "soil_fraction_values.csv"),
+    plot_width  = 12,
+    plot_height = 12,
+    plot_dpi    = 300
+) {
+  # Load required libraries
+  library(terra)
+  library(dplyr)
+  library(ggplot2)
+  library(sf)
+  library(rnaturalearth)
+  library(rnaturalearthdata)
+  library(patchwork)
   
-  species_totals <- df %>% group_by(species) %>% summarise(total_pixels = n(), .groups = "drop")
+  # Read Germany boundary
+  boundary_germany <- ne_countries(
+    scale = "medium",
+    country = "Germany",
+    returnclass = "sf"
+  )
   
-  psi_min <- floor(min(df$soil_water_potential, na.rm = TRUE))
-  psi_max <- ceiling(max(df$soil_water_potential, na.rm = TRUE))
-  bin_breaks <- seq(psi_min, psi_max, by = bin_width)
-  
-  df <- df %>%
-    mutate(PSI_bin = cut(soil_water_potential, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
-  
-  meanNDVI_PSIbin_species <- df %>%
-    group_by(species, PSI_bin) %>%
-    summarise(
-      avg_value = mean(.data[[value_column]], na.rm = TRUE),
-      count = n(),
-      .groups = 'drop'
-    ) %>%
+  # Read lookup tables and build LUT
+  soil_descrip <- read.csv(lut_path, stringsAsFactors = FALSE)
+  soil_texture <- read.csv(texture_path, stringsAsFactors = FALSE)
+  lut <- soil_descrip %>%
+    select(feinbod_code, feinbod) %>%
+    inner_join(soil_texture, by = c("feinbod" = "code")) %>%
     mutate(
-      bin_median = sapply(as.character(PSI_bin), function(bin_label) {
-        nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
-        mean(nums)
-      })
+      clay_mid = (clay_lower + clay_upper) / 2,
+      silt_mid = (silt_lower + silt_upper) / 2,
+      sand_mid = (sand_lower + sand_upper) / 2
     ) %>%
-    left_join(species_totals, by = "species") %>%
-    mutate(percentage = count / total_pixels) %>%
-    filter(percentage >= 0.001) %>%
-    select(species, PSI_bin, bin_median, avg_value, count, total_pixels, percentage)
+    select(feinbod_code, clay_mid, silt_mid, sand_mid)
   
-  return(meanNDVI_PSIbin_species)
-}
-
-NDVI_TDiffbin <- function(df, bin_width = 3) {
-  value_col <- if ("Quantiles" %in% names(df)) "Quantiles" else "Proportions"
-  
-  species_totals <- df %>% group_by(species) %>% summarise(total_pixels = n(), .groups = "drop")
-  
-  tdiff_min <- floor(min(df$transpiration_deficit, na.rm = TRUE))
-  tdiff_max <- ceiling(max(df$transpiration_deficit, na.rm = TRUE))
-  bin_breaks <- seq(tdiff_min, tdiff_max, by = bin_width)
-  
-  df <- df %>%
-    mutate(TDiff_bin = cut(transpiration_deficit, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
-  
-  get_bin_median <- function(bin_label) {
-    nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
-    mean(nums)
+  # Function to generate fraction plots and data for one raster
+  make_fraction_plots <- function(raster_path) {
+    soil_code <- rast(raster_path)
+    clay_r <- subst(soil_code, from = lut$feinbod_code, to = lut$clay_mid); names(clay_r) <- "clay"
+    silt_r <- subst(soil_code, from = lut$feinbod_code, to = lut$silt_mid); names(silt_r) <- "silt"
+    sand_r <- subst(soil_code, from = lut$feinbod_code, to = lut$sand_mid); names(sand_r) <- "sand"
+    
+    clay_df <- as.data.frame(clay_r, xy = TRUE) %>% rename(value = clay) %>% filter(!is.na(value))
+    silt_df <- as.data.frame(silt_r, xy = TRUE) %>% rename(value = silt) %>% filter(!is.na(value))
+    sand_df <- as.data.frame(sand_r, xy = TRUE) %>% rename(value = sand) %>% filter(!is.na(value))
+    
+    base_theme <- theme_minimal() +
+      theme(
+        axis.text.x      = element_text(angle = 0, hjust = 0.5),
+        plot.background  = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white"),
+        legend.background= element_rect(fill = "white", color = "white"),
+        plot.title       = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+        axis.title       = element_blank(),
+        axis.text        = element_text(color = "black", size = 14),
+        panel.border     = element_rect(color = "black", fill = NA, linewidth = 0.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position  = "bottom",
+        legend.key.width = unit(1.3, "cm"),
+        legend.key.height= unit(0.5, "cm"),
+        legend.text      = element_text(size = 14),
+        legend.title     = element_text(size = 14),
+        strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+        strip.text       = element_text(face = "bold", size = 12)
+      )
+    
+    list(
+      clay = ggplot(clay_df, aes(x = x, y = y, color = value)) +
+        geom_point(size = 0.5) +
+        geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
+        coord_sf(expand = FALSE) +
+        scale_color_gradientn(colours = c("white", "lightblue", "dodgerblue", "#0072B2"), name = "clay (%)") +
+        base_theme,
+      silt = ggplot(silt_df, aes(x = x, y = y, color = value)) +
+        geom_point(size = 0.5) +
+        geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
+        coord_sf(expand = FALSE) +
+        scale_color_gradientn(colours = c("white", "#b9f6ca", "#00bfae", "#00675b"), name = "silt (%)") +
+        base_theme,
+      sand = ggplot(sand_df, aes(x = x, y = y, color = value)) +
+        geom_point(size = 0.5) +
+        geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
+        coord_sf(expand = FALSE) +
+        scale_color_gradientn(colours = c("white", "#ffe0b2", "orange", "#ff6600"), name = "sand (%)") +
+        base_theme,
+      data = bind_rows(
+        clay_df %>% mutate(fraction = "clay"),
+        silt_df %>% mutate(fraction = "silt"),
+        sand_df %>% mutate(fraction = "sand")
+      )
+    )
   }
   
-  meanNDVI_TDiffbin_species <- df %>%
-    group_by(species, TDiff_bin) %>%
-    summarise(
-      avg_value = mean(.data[[value_col]], na.rm = TRUE),
-      count = n(),
-      .groups = 'drop'
-    ) %>%
-    mutate(bin_median = sapply(as.character(TDiff_bin), get_bin_median)) %>%
-    left_join(species_totals, by = "species") %>%
-    mutate(percentage = count / total_pixels) %>%
-    filter(percentage >= 0.0001) %>%
-    select(species, TDiff_bin, bin_median, avg_value, count, total_pixels, percentage)
+  # Prepare storage for plots and data
+  plot_list <- list()
+  soil_fraction_df <- tibble()
   
-  return(meanNDVI_TDiffbin_species)
+  # Generate plots per species
+  for (sp in species_order) {
+    raster_file <- file.path(soil_map_dir, paste0(sp, "_soilCode_MODIS.tif"))
+    res <- make_fraction_plots(raster_file)
+    plot_list[[sp]] <- res[c("clay", "silt", "sand")]
+    soil_fraction_df <- bind_rows(soil_fraction_df, res$data %>% mutate(species = sp))
+  }
+  
+  # Define desired row (fraction) order
+  fraction_order <- c("silt", "clay", "sand")
+  
+  # Build composite list: row-by-row, adding species title only on first row
+  all_plots_list <- list()
+  for (fr in fraction_order) {
+    for (i in seq_along(species_order)) {
+      sp <- species_order[i]
+      p <- plot_list[[sp]][[fr]] +
+        theme(plot.margin = margin(5, 5, 2, 5))
+      # Add title only on first row
+      if (fr == fraction_order[1]) {
+        p <- p + labs(title = sp)
+      }
+      all_plots_list <- c(all_plots_list, list(p))
+    }
+  }
+  
+  # Assemble and save composite
+  composite <- wrap_plots(all_plots_list,
+                          ncol = length(species_order),
+                          nrow = length(fraction_order),
+                          guides = "collect") &
+    theme(
+      legend.position = "bottom",
+      plot.background = element_rect(fill = "white", color = NA),
+      plot.margin     = margin(5, 5, 5, 5),
+      panel.spacing   = unit(0, "cm")
+    )
+  
+  ggsave(output_plot, composite,
+         width = plot_width,
+         height = plot_height,
+         dpi = plot_dpi,
+         bg = "white")
+  
+  # Save raw data
+  write.csv(soil_fraction_df, output_csv, row.names = FALSE)
+  
+  message("Composite plot saved to: ", output_plot)
+  message("Soil fraction data saved to: ", output_csv)
 }
 
-TDiff_PSIbin <- function(df, bin_width = 50) {
-  # Here the value is transpiration_deficit
-  value_column <- "transpiration_deficit"
+plot_soil_fraction_composite()
+
+### S8 soil texture composition bar ###
+plot_bar_soil_composition <- function(
+    data_csv     = "results_rootzone/Data/soil_fraction_values.csv",
+    result_fig_dir = "results_rootzone/Figures",
+    output_file  = file.path(result_fig_dir, "soil_composition_bar.png"),
+    widths       = 12,
+    height       = 4,
+    dpi          = 300
+) {
+  library(readr); library(dplyr); library(ggplot2)
   
-  species_totals <- df %>% group_by(species) %>% summarise(total_pixels = n(), .groups = "drop")
+  # Read raw fraction data
+  df <- read_csv(data_csv)
   
-  psi_min <- floor(min(df$soil_water_potential, na.rm = TRUE))
-  psi_max <- ceiling(max(df$soil_water_potential, na.rm = TRUE))
-  bin_breaks <- seq(psi_min, psi_max, by = bin_width)
-  
-  df <- df %>%
-    mutate(PSI_bin = cut(soil_water_potential, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
-  
-  meanTDiff_PSIbin_species <- df %>%
-    group_by(species, PSI_bin) %>%
-    summarise(
-      avg_transpiration_deficit = mean(.data[[value_column]], na.rm = TRUE),
-      count = n(),
-      .groups = 'drop'
-    ) %>%
+  # Compute mean & proportions
+  mean_df <- df %>%
+    group_by(species, fraction) %>%
+    summarise(mean_value = mean(value, na.rm=TRUE), .groups="drop") %>%
+    group_by(species) %>%
+    mutate(proportion = 100 * mean_value / sum(mean_value)) %>%
+    ungroup() %>%
     mutate(
-      bin_median = sapply(as.character(PSI_bin), function(bin_label) {
-        nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
-        mean(nums)
-      })
-    ) %>%
-    left_join(species_totals, by = "species") %>%
-    mutate(percentage = count / total_pixels) %>%
-    filter(percentage > 0.001) %>%
-    select(species, PSI_bin, bin_median, avg_transpiration_deficit, count, total_pixels, percentage)
+      species  = factor(species, levels=c("Oak","Beech","Spruce","Pine")),
+      fraction = factor(fraction, levels=c("clay","silt","sand"))
+    )
   
-  return(meanTDiff_PSIbin_species)
+  # Bar theme (reuse bar_theme defined earlier if in global env)
+  bar_theme <- theme_minimal() +
+    theme(axis.text.x=element_text(size=14, color="black"),
+          axis.text.y=element_text(size=14, color="black"),
+          axis.title.x=element_blank(),
+          axis.title.y=element_text(size=14, color="black"),
+          legend.position="none",
+          plot.background=element_rect(fill="white",color="white"),
+          panel.border=element_rect(color="black",fill=NA),
+          panel.grid=element_blank(),
+          strip.text=element_text(size=16,face="bold"))
+  
+  # Plot three-panel bar chart
+  p <- ggplot(mean_df, aes(x=species, y=proportion, fill=species)) +
+    geom_col(width=0.7) +
+    facet_wrap(~ fraction, nrow=1, scales="free_y") +
+    scale_fill_manual(values=c(
+      "Oak"    = "#E69F00",
+      "Beech"  = "#0072B2",
+      "Spruce" = "#009E73",
+      "Pine"   = "#F0E442"
+    )) +
+    ylim(0,80) +
+    labs(y="percentage (%)") +
+    bar_theme
+  
+  print(p)
+  ggsave(output_file, p, width=widths, height=height, dpi=dpi)
 }
-
-plot_combined_AIC_R2 <- function(data, save_combined_fig) {
-  species_order <- c("Oak", "Beech", "Spruce", "Pine")
-  
-  # Panel A: NDVI ~ PSIbin
-  data_a <- NDVI_PSIbin(data)
-  data_a <- na.omit(data_a)
-  data_a$species <- factor(data_a$species, levels = species_order)
-  data_a <- data_a %>% mutate(x = -bin_median)
-  
-  start_list_a <- list(a = 5, b = 3, c = 0.001)
-  control_params_a <- nls.control(maxiter = 200, minFactor = 1e-4)
-  
-  aic_results_a <- list()
-  for (sp in levels(data_a$species)) {
-    sp_data <- data_a %>% filter(species == sp)
-    lm_linear <- lm(avg_value ~ x, data = sp_data)
-    aic_linear <- AIC(lm_linear)
-    r2_linear <- summary(lm_linear)$r.squared
-    
-    aic_exp <- NA; r2_exp <- NA
-    nls_exp <- tryCatch({
-      nls(avg_value ~ a + b * exp(-c * x),
-          data = sp_data, start = start_list_a, control = control_params_a)
-    }, error = function(e) NULL)
-    if (!is.null(nls_exp)) {
-      aic_exp <- AIC(nls_exp)
-      res <- resid(nls_exp)
-      ss_res <- sum(res^2)
-      ss_tot <- sum((sp_data$avg_value - mean(sp_data$avg_value))^2)
-      r2_exp <- 1 - ss_res / ss_tot
-    }
-    
-    sp_results <- data.frame(species = sp, Model = c("Linear", "Exponential"),
-                             AIC = c(aic_linear, aic_exp), R2 = c(r2_linear, r2_exp))
-    sp_results$y_label_pos <- sp_results$AIC / 2
-    aic_results_a[[sp]] <- sp_results
-  }
-  aic_df_a <- do.call(rbind, aic_results_a)
-  aic_df_a$species <- factor(aic_df_a$species, levels = species_order)
-  
-  model_palette_shared <- c("Linear" = "orange", "Exponential" = "dodgerblue")
-  
-  p_a <- ggplot(aic_df_a, aes(x = species, y = AIC, fill = Model)) +
-    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
-    geom_text(aes(label = round(R2, 2), y = y_label_pos),
-              position = position_dodge(width = 0.9), vjust = 0.5, size = 8, color = "black") +
-    labs(x = "", y = "AIC", title = "NDVI ~ PSIbin", caption = "(a)") +
-    scale_fill_manual(values = model_palette_shared) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 0, hjust = 0.5),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-      plot.subtitle = element_text(hjust = 0.5, size =14),
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      legend.position = "none",
-      legend.text = element_text(size = 14),
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      strip.text = element_text(face = "bold", size = 12)
-    )
-  
-  # Panel B: NDVI ~ TDiffbin
-  data_b <- NDVI_TDiffbin(data)
-  data_b <- na.omit(data_b)
-  data_b$species <- factor(data_b$species, levels = species_order)
-  data_b <- data_b %>% mutate(x = bin_median)
-  
-  start_list_b <- list(a = 5, b = 7, c = 0.04)
-  control_params_b <- nls.control(maxiter = 1200, minFactor = 1e-09)
-  
-  aic_results_b <- list()
-  for (sp in levels(data_b$species)) {
-    sp_data <- data_b %>% filter(species == sp)
-    lm_linear <- lm(avg_value ~ x, data = sp_data)
-    aic_linear <- AIC(lm_linear)
-    r2_linear <- summary(lm_linear)$r.squared
-    
-    aic_exp <- NA; r2_exp <- NA
-    nls_exp <- tryCatch({
-      nls(avg_value ~ a + b * exp(-c * x),
-          data = sp_data, start = start_list_b, control = control_params_b)
-    }, error = function(e) NULL)
-    if (!is.null(nls_exp)) {
-      aic_exp <- AIC(nls_exp)
-      res <- resid(nls_exp)
-      ss_res <- sum(res^2)
-      ss_tot <- sum((sp_data$avg_value - mean(sp_data$avg_value))^2)
-      r2_exp <- 1 - ss_res / ss_tot
-    }
-    
-    sp_results <- data.frame(species = sp, Model = c("Linear", "Exponential"),
-                             AIC = c(aic_linear, aic_exp), R2 = c(r2_linear, r2_exp))
-    sp_results$y_label_pos <- sp_results$AIC / 2
-    aic_results_b[[sp]] <- sp_results
-  }
-  aic_df_b <- do.call(rbind, aic_results_b)
-  aic_df_b$species <- factor(aic_df_b$species, levels = species_order)
-  
-  p_b <- ggplot(aic_df_b, aes(x = species, y = AIC, fill = Model)) +
-    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
-    geom_text(aes(label = round(R2, 2), y = y_label_pos),
-              position = position_dodge(width = 0.9), vjust = 0.5, size = 8, color = "black") +
-    labs(x = "", y = "AIC", title = "NDVI ~ TDiffbin", caption = "(b)") +
-    scale_fill_manual(values = model_palette_shared) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 0, hjust = 0.5),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-      plot.subtitle = element_text(hjust = 0.5, size =14),
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      legend.position = "none",
-      legend.text = element_text(size = 14),
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      strip.text = element_text(face = "bold", size = 12)
-    )
-  
-  # Panel C: TDiff ~ PSIbin (with polynomial fits)
-  data_c <- TDiff_PSIbin(data)
-  data_c <- na.omit(data_c)
-  data_c$species <- factor(data_c$species, levels = species_order)
-  data_c <- data_c %>% mutate(x = bin_median)
-  
-  aic_results_c <- list()
-  for (sp in levels(data_c$species)) {
-    sp_data <- data_c %>% filter(species == sp)
-    lm_linear <- lm(avg_transpiration_deficit ~ x, data = sp_data)
-    aic_linear <- AIC(lm_linear)
-    r2_linear <- summary(lm_linear)$r.squared
-    
-    lm_poly2 <- lm(avg_transpiration_deficit ~ x + I(x^2), data = sp_data)
-    aic_poly2 <- AIC(lm_poly2)
-    r2_poly2 <- summary(lm_poly2)$r.squared
-    
-    lm_poly3 <- lm(avg_transpiration_deficit ~ x + I(x^2) + I(x^3), data = sp_data)
-    aic_poly3 <- AIC(lm_poly3)
-    r2_poly3 <- summary(lm_poly3)$r.squared
-    
-    sp_results <- data.frame(species = sp, Model = c("Linear", "Poly2", "Poly3"),
-                             AIC = c(aic_linear, aic_poly2, aic_poly3),
-                             R2 = c(r2_linear, r2_poly2, r2_poly3))
-    sp_results$y_label_pos <- sp_results$AIC / 2
-    aic_results_c[[sp]] <- sp_results
-  }
-  aic_df_c <- do.call(rbind, aic_results_c)
-  aic_df_c$species <- factor(aic_df_c$species, levels = species_order)
-  
-  model_palette_c <- c("Linear" = "orange", "Poly2" = "dodgerblue", "Poly3" = "green4")
-  
-  p_c <- ggplot(aic_df_c, aes(x = species, y = AIC, fill = Model)) +
-    geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
-    geom_text(aes(label = round(R2, 2), y = y_label_pos),
-              position = position_dodge(width = 0.9), vjust = 0.5, size = 8, color = "black") +
-    labs(x = "", y = "AIC", title = "TDiff ~ PSIbin", caption = "(c)") +
-    scale_fill_manual(values = model_palette_c) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 0, hjust = 0.5),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-      plot.subtitle = element_text(hjust = 0.5, size =14),
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      legend.position = "none",
-      legend.text = element_text(size = 14),
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      strip.text = element_text(face = "bold", size = 12)
-    )
-  
-  combined_top <- (p_a | p_b) + plot_layout(guides = "collect") +
-    theme(legend.position = "top")
-  combined_plot <- combined_top / p_c
-  
-  dir.create(dirname(save_combined_fig), recursive = TRUE, showWarnings = FALSE)
-  ggsave(filename = save_combined_fig, plot = combined_plot, width = 14, height = 12, dpi = 300)
-  print(combined_plot)
-}
-
-plot_combined_AIC_R2(data, "results_rootzone/Figures/combined_AIC.png")
+plot_bar_soil_composition()
 
