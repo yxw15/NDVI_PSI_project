@@ -1,137 +1,243 @@
-# Set working directory and load packages
-setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
-library(dplyr)
-library(ggplot2)
-library(terra)
-library(GGally)
-library(patchwork)
+# ======================= PSI & TDiff cross-species analysis ===================
+# Process -> GeoTIFFs/CSVs -> Maps -> Same-pixel correlations (PSI & TDIFF)
+# ==============================================================================
 
-# Create directory for figures
-figures_dir <- "results_rootzone/Figures"
-dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(ggplot2)
+  library(grid)
+  library(sf)
+  library(rnaturalearth)
+  library(rnaturalearthdata)
+  library(terra)
+  library(purrr)
+  library(GGally)
+  library(readr)
+  library(patchwork)
+})
 
-# Load and combine rasters
-PSI_Oak_2024_07_28_TIFF <- rast("results_rootzone/Project_mean/PSI_Oak_2024_07_28.tif")
-PSI_Beech_2024_07_28_TIFF <- rast("results_rootzone/Project_mean/PSI_Beech_2024_07_28.tif")
-PSI_Spruce_2024_07_28_TIFF <- rast("results_rootzone/Project_mean/PSI_Spruce_2024_07_28.tif")
-PSI_Pine_2024_07_28_TIFF <- rast("results_rootzone/Project_mean/PSI_Pine_2024_07_28.tif")
+# ---------------------------- Root & Config -----------------------------------
+root_dir <- "/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project"
+setwd(root_dir)
 
-names(PSI_Oak_2024_07_28_TIFF) <- "PSI_Oak_2024_07_28"
-names(PSI_Beech_2024_07_28_TIFF) <- "PSI_Beech_2024_07_28"
-names(PSI_Spruce_2024_07_28_TIFF) <- "PSI_Spruce_2024_07_28"
-names(PSI_Pine_2024_07_28_TIFF) <- "PSI_Pine_2024_07_28"
+target_date <- as.Date("2024-07-28")
+target_year <- 2024
+sample_cap  <- 10000L
 
-PSI_2024_07_28_TIFF <- c(PSI_Oak_2024_07_28_TIFF,
-                         PSI_Beech_2024_07_28_TIFF,
-                         PSI_Spruce_2024_07_28_TIFF,
-                         PSI_Pine_2024_07_28_TIFF)
+species_config <- list(
+  Beech  = list(
+    psi   = "../ALLAN_PIA_SoilMoisture/PSIM/PSImean_rootzone_AMJJA_8days_Bu_bfv_20032024_compressed.nc",
+    tdiff = "../ALLAN_PIA_SoilMoisture/TDIFF/TDiffsum_AMJJA_8days_Bu_bfv20032024_compressed.nc"
+  ),
+  Oak    = list(
+    psi   = "../ALLAN_PIA_SoilMoisture/PSIM/PSImean_rootzone_AMJJA_8days_Ei_bfv_20032024_compressed.nc",
+    tdiff = "../ALLAN_PIA_SoilMoisture/TDIFF/TDiffsum_AMJJA_8days_Ei_bfv20032024_compressed.nc"
+  ),
+  Spruce = list(
+    psi   = "../ALLAN_PIA_SoilMoisture/PSIM/PSImean_rootzone_AMJJA_8days_Fi_bfv_20032024_compressed.nc",
+    tdiff = "../ALLAN_PIA_SoilMoisture/TDIFF/TDiffsum_AMJJA_8days_Fi_bfv20032024_compressed.nc"
+  ),
+  Pine   = list(
+    psi   = "../ALLAN_PIA_SoilMoisture/PSIM/PSImean_rootzone_AMJJA_8days_Ki_bfv_20032024_compressed.nc",
+    tdiff = "../ALLAN_PIA_SoilMoisture/TDIFF/TDiffsum_AMJJA_8days_Ki_bfv20032024_compressed.nc"
+  )
+)
 
-# Randomly sample 1000 points (excluding NA values)
-set.seed(123) # for reproducibility
-sample_points <- spatSample(PSI_2024_07_28_TIFF, size = 1000, method = "random", 
-                            na.rm = TRUE, as.df = TRUE)
+dir.create("results_rootzone/Project_mean", recursive = TRUE, showWarnings = FALSE)
+dir.create("results_rootzone/Figures",      recursive = TRUE, showWarnings = FALSE)
 
-# Check the structure of sampled data
-cat("Sample data structure:\n")
-print(str(sample_points))
-cat("\nNumber of non-NA samples:", nrow(sample_points), "\n")
+# Template & borders
+NDVI_template <- rast("../WZMAllDOYs/Quantiles_241.nc")[[1]]
+germany_border_gk <- ne_countries(country = "Germany", scale = "medium", returnclass = "sf") |>
+  st_transform(crs(NDVI_template))
 
-# Rename columns for better readability
-colnames(sample_points) <- c("Oak", "Beech", "Spruce", "Pine")
-
-# Option 1: Comprehensive scatter plot matrix using GGally
-cat("Creating scatter plot matrix...\n")
-scatter_matrix <- ggpairs(sample_points,
-                          title = "Scatter Plot Matrix of PSI Values (1000 random points)",
-                          lower = list(continuous = wrap("points", alpha = 0.6, size = 1)),
-                          diag = list(continuous = wrap("barDiag", bins = 20)),
-                          upper = list(continuous = wrap("cor", size = 4))) +
-  theme_minimal() +
-  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
-
-# Save scatter plot matrix
-ggsave(file.path(figures_dir, "PSI_scatter_matrix.png"), scatter_matrix, 
-       width = 12, height = 10, dpi = 300)
-cat("Saved: PSI_scatter_matrix.png\n")
-
-# Option 2: Individual scatter plots for each pair
-cat("Creating individual scatter plots...\n")
-layer_names <- c("Oak", "Beech", "Spruce", "Pine")
-pairs <- combn(layer_names, 2, simplify = FALSE)
-
-# Create individual scatter plots
-plots <- list()
-
-for (pair in pairs) {
-  p <- ggplot(sample_points, aes(x = .data[[pair[1]]], y = .data[[pair[2]]])) +
-    geom_point(alpha = 0.6, size = 2, color = "steelblue") +
-    geom_smooth(method = "lm", se = TRUE, color = "red", fill = "pink", alpha = 0.3) +
-    labs(x = paste0(pair[1], " PSI (kPa)"),
-         y = paste0(pair[2], " PSI (kPa)"),
-         title = paste0(pair[1], " vs ", pair[2])) +
-    theme_minimal() +
-    theme(plot.title = element_text(hjust = 0.5, face = "bold"),
-          panel.grid.major = element_line(color = "grey90"),
-          panel.grid.minor = element_blank())
-  
-  plots[[paste0(pair[1], "_vs_", pair[2])]] <- p
-  
-  # Save each individual plot
-  ggsave(file.path(figures_dir, paste0("PSI_", pair[1], "_vs_", pair[2], ".png")), p, 
-         width = 8, height = 6, dpi = 300)
-  cat(paste0("Saved: PSI_", pair[1], "_vs_", pair[2], ".png\n"))
+# ------------------------------ Visual Style ----------------------------------
+theme_consistent <- function(base_size = 12) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.background   = element_rect(fill = "white", color = "white"),
+      panel.background  = element_rect(fill = "white"),
+      legend.background = element_rect(fill = "white", color = "white"),
+      plot.title        = element_text(hjust = 0.5, size = 18, face = "bold"),
+      plot.subtitle     = element_text(hjust = 0.5, size = 14),
+      axis.title        = element_text(face = "bold", size = 14),
+      axis.text.y       = element_text(color = "black", size = 12),
+      axis.text.x       = element_text(color = "black", size = 12),
+      panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.5),
+      panel.grid.major  = element_blank(),
+      panel.grid.minor  = element_blank(),
+      legend.position   = "top",
+      legend.text       = element_text(size = 12),
+      strip.background  = element_rect(fill = "white", color = "black", linewidth = 0.5),
+      strip.text        = element_text(face = "bold", size = 12)
+    )
 }
 
-# Arrange individual plots in a grid
-cat("Arranging plots in grid...\n")
-grid_plot <- wrap_plots(plots, ncol = 2) + 
-  plot_annotation(title = "Pairwise Scatter Plots of PSI Values",
-                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16)))
-
-# Save grid of individual plots
-ggsave(file.path(figures_dir, "PSI_pairwise_scatters_grid.png"), grid_plot, 
-       width = 14, height = 12, dpi = 300)
-cat("Saved: PSI_pairwise_scatters_grid.png\n")
-
-# Option 3: Simple base R scatter matrix (saved as PNG)
-cat("Creating base R scatter matrix...\n")
-png(file.path(figures_dir, "PSI_baseR_scatter_matrix.png"), 
-    width = 10, height = 10, units = "in", res = 300)
-pairs(sample_points, 
-      main = "Scatter Plot Matrix of PSI Values (1000 random points)",
-      pch = 16, 
-      cex = 0.8,
-      col = rgb(0.2, 0.4, 0.6, 0.6),
-      gap = 0.5)
-dev.off()
-cat("Saved: PSI_baseR_scatter_matrix.png\n")
-
-# Additional analysis: Correlation matrix
-cat("\nCorrelation Analysis:\n")
-cor_matrix <- cor(sample_points, use = "complete.obs")
-print("Correlation Matrix:")
-print(round(cor_matrix, 3))
-
-# Save correlation matrix as CSV
-write.csv(round(cor_matrix, 3), file.path(figures_dir, "PSI_correlation_matrix.csv"))
-cat("Saved: PSI_correlation_matrix.csv\n")
-
-# Summary statistics
-cat("\nSummary Statistics:\n")
-summary_stats <- summary(sample_points)
-print(summary_stats)
-
-# Save summary statistics as CSV
-summary_df <- as.data.frame(do.call(cbind, lapply(sample_points, summary)))
-write.csv(summary_df, file.path(figures_dir, "PSI_summary_statistics.csv"))
-cat("Saved: PSI_summary_statistics.csv\n")
-
-# Create a comprehensive report of all files saved
-saved_files <- list.files(figures_dir, pattern = "PSI_")
-cat("\n=== FILES SAVED IN results_rootzone/Figures/ ===\n")
-for (file in saved_files) {
-  cat(paste0("- ", file, "\n"))
+palette_for <- function(var) {
+  if (tolower(var) == "psi") {
+    rev(c("blue", "dodgerblue", "cyan", "yellow", "orange", "red"))
+  } else {
+    c("blue", "dodgerblue", "cyan", "yellow", "orange", "red")
+  }
 }
 
-cat(paste0("\nAnalysis complete! All files saved in: ", figures_dir, "\n"))
-cat(paste0("Total files created: ", length(saved_files), "\n"))
+save_plot <- function(plot, path, width, height, dpi = 300) {
+  ggplot2::ggsave(filename = path, plot = plot, width = width, height = height, dpi = dpi)
+  message("✅ Saved: ", normalizePath(path, winslash = "/"))
+}
+
+# ------------------------------- File Helpers ---------------------------------
+points_csv_path <- function(var) {
+  file.path("results_rootzone/Project_mean",
+            sprintf("%s_points_%s.csv", toupper(var), format(target_date, "%Y_%m_%d")))
+}
+projected_tif_path <- function(var, sp) {
+  file.path("results_rootzone/Project_mean",
+            sprintf("%s_%s_%s.tif", toupper(var), sp, format(target_date, "%Y_%m_%d")))
+}
+
+# --------------------------- NetCDF Date Extractor ----------------------------
+extract_date_layer <- function(nc_path, date) {
+  r_all <- rast(nc_path)
+  idx   <- which(time(r_all) == date)
+  if (length(idx) != 1) return(NULL)
+  r_all[[idx]]
+}
+
+# ------------------------- 1) Process PSI & TDIFF -----------------------------
+process_variable_data <- function(var) {
+  message(sprintf("--- Processing %s ---", toupper(var)))
+  dfs <- imap(species_config, function(paths, sp) {
+    nc <- paths[[tolower(var)]]
+    if (is.null(nc) || !file.exists(nc)) return(NULL)
+    lyr <- extract_date_layer(nc, target_date)
+    if (is.null(lyr)) return(NULL)
+    proj <- project(lyr, NDVI_template)
+    writeRaster(proj, projected_tif_path(var, sp), overwrite = TRUE)
+    df <- as.data.frame(proj, xy = TRUE, na.rm = TRUE)
+    names(df)[3] <- var
+    df$species <- sp
+    df$year    <- target_year
+    df
+  })
+  dfs <- compact(dfs)
+  if (!length(dfs)) return(invisible(FALSE))
+  all_df <- bind_rows(dfs)
+  write.csv(all_df, points_csv_path(var), row.names = FALSE)
+  invisible(TRUE)
+}
+
+# -------------------- 2) Faceted ggplot maps (per variable) -------------------
+plot_distribution <- function(var, legend_title) {
+  csv_file <- points_csv_path(var)
+  if (!file.exists(csv_file)) return(invisible(FALSE))
+  all_df <- read.csv(csv_file)
+  dfm <- all_df |>
+    group_by(x, y, species, year) |>
+    summarise(mean_val = mean(.data[[var]], na.rm = TRUE), .groups = "drop") |>
+    mutate(species = factor(species, levels = c("Oak","Beech","Spruce","Pine")))
+  pal <- palette_for(var)
+  p <- ggplot(dfm, aes(x = x, y = y, color = mean_val)) +
+    geom_point(size = 0.5) +
+    geom_sf(data = germany_border_gk, fill = NA, color = "black", inherit.aes = FALSE) +
+    scale_color_gradientn(colours = pal, name = legend_title) +
+    facet_wrap(~ species, nrow = 1) +
+    coord_sf(crs = crs(NDVI_template), expand = FALSE) +
+    labs(x = "longitude", y = "latitude") +
+    theme_consistent(12)
+  out <- file.path("results_rootzone/Figures",
+                   sprintf("mean_%s_all_species_%s.png", var, format(target_date, "%Y_%m_%d")))
+  save_plot(p, out, width = 10, height = 4, dpi = 300)
+}
+
+# --------- 4) Same-pixel correlations (pairs, heatmap, selected pairs) -------
+cross_species_correlations <- function(var, sample_cap = 10000L, seed = 1234) {
+  date_tag <- format(target_date, "%Y_%m_%d")
+  r_dir <- "results_rootzone/Project_mean"
+  r_oak    <- rast(file.path(r_dir, sprintf("%s_Oak_%s.tif",   toupper(var), date_tag)))
+  r_beech  <- rast(file.path(r_dir, sprintf("%s_Beech_%s.tif", toupper(var), date_tag)))
+  r_spruce <- rast(file.path(r_dir, sprintf("%s_Spruce_%s.tif",toupper(var), date_tag)))
+  r_pine   <- rast(file.path(r_dir, sprintf("%s_Pine_%s.tif",  toupper(var), date_tag)))
+  
+  names(r_oak) <- "Oak"; names(r_beech) <- "Beech"
+  names(r_spruce) <- "Spruce"; names(r_pine) <- "Pine"
+  stk <- c(r_oak, r_beech, r_spruce, r_pine)
+  
+  set.seed(seed)
+  complete_mask <- terra::app(stk, function(v) as.integer(all(!is.na(v))))
+  available <- as.integer(terra::global(complete_mask, "sum", na.rm = TRUE)[1,1])
+  n_samp <- min(sample_cap, available)
+  pts <- terra::spatSample(complete_mask, size = n_samp, method = "random",
+                           as.points = TRUE, na.rm = TRUE, values = FALSE)
+  samp_df <- terra::extract(stk, pts, xy = TRUE) |> dplyr::select(-ID)
+  
+  # Correlations
+  num_df <- dplyr::select(samp_df, Oak, Beech, Spruce, Pine)
+  corr_pearson  <- cor(num_df, use = "complete.obs", method = "pearson")
+  
+  # A) GGally pairs
+  p_pairs <- GGally::ggpairs(num_df,
+                             progress = FALSE,
+                             upper = list(continuous = GGally::wrap("cor", size = 3)),
+                             lower = list(continuous = GGally::wrap("points", alpha = 0.4, size = 0.6)),
+                             diag  = list(continuous = GGally::wrap("densityDiag"))) +
+    theme_consistent(12)
+  pairs_ggally <- file.path("results_rootzone/Figures",
+                            sprintf("%s_pairs_sample%d.png", toupper(var), n_samp))
+  save_plot(p_pairs, pairs_ggally, width = 10, height = 10, dpi = 300)
+  
+  # B) Heatmap
+  corr_long <- as.data.frame(as.table(corr_pearson))
+  names(corr_long) <- c("Var1","Var2","corr")
+  p_heat <- ggplot(corr_long, aes(Var1, Var2, fill = corr)) +
+    geom_tile() +
+    geom_text(aes(label = sprintf("%.2f", corr)), size = 4) +
+    scale_fill_gradient2(limits = c(-1, 1), midpoint = 0, name = "Pearson r") +
+    coord_fixed() +
+    labs(title = paste(toupper(var), "correlations across species"),
+         x = NULL, y = NULL) +
+    theme_consistent(12)
+  heat_path <- file.path("results_rootzone/Figures",
+                         sprintf("%s_correlation_heatmap_sample%d.png", toupper(var), n_samp))
+  save_plot(p_heat, heat_path, width = 6.5, height = 5.2, dpi = 300)
+  
+  # C) Selected pairwise scatter panels
+  plot_pair <- function(df, xvar, yvar) {
+    r <- suppressWarnings(cor(df[[xvar]], df[[yvar]], use = "complete.obs"))
+    ggplot(df, aes(x = .data[[xvar]], y = .data[[yvar]])) +
+      geom_point(alpha = 0.4, size = 0.8) +
+      suppressWarnings(geom_smooth(method = "lm", se = FALSE)) +
+      annotate("text",
+               x = min(df[[xvar]], na.rm = TRUE),
+               y = max(df[[yvar]], na.rm = TRUE),
+               label = paste0("r = ", round(r, 2)),
+               hjust = 0, vjust = 1, size = 5, fontface = "bold") +
+      labs(x = xvar, y = yvar) +
+      theme_consistent(12)
+  }
+  pairs_to_plot <- list(
+    c("Oak", "Beech"), c("Oak", "Spruce"), c("Oak", "Pine"),
+    c("Beech", "Spruce"), c("Beech", "Pine"), c("Spruce", "Pine")
+  )
+  plots <- lapply(pairs_to_plot, function(p) plot_pair(num_df, p[1], p[2]))
+  combined <- (plots[[1]] | plots[[2]] | plots[[3]]) /
+    (plots[[4]] | plots[[5]] | plots[[6]])
+  pairs_custom <- file.path("results_rootzone/Figures",
+                            sprintf("%s_pairs_corr_sample%d.png", toupper(var), n_samp))
+  save_plot(combined, pairs_custom, width = 12, height = 8, dpi = 300)
+}
+
+# ------------------------------- Run Pipeline ---------------------------------
+process_variable_data("psi")
+process_variable_data("tdiff")
+
+plot_distribution("psi",   "soil water potential (kPa)")
+plot_distribution("tdiff", "transpiration deficit (mm)")
+
+cross_species_correlations("psi",   sample_cap = sample_cap)
+cross_species_correlations("tdiff", sample_cap = sample_cap)
+
+message("\nContents of Figures dir:")
+print(list.files("results_rootzone/Figures", pattern = "^(PSI|TDIFF)_.*\\.(png|csv)$",
+                 full.names = TRUE))
+# ==============================================================================
