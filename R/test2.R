@@ -1,196 +1,315 @@
+# Load required packages
+library(terra)           # Raster data handling
+library(dplyr)           # Data manipulation
+library(ggplot2)         # Plotting
+library(sf)              # Vector spatial data
+library(tidyr)           # Data reshaping
+library(rnaturalearth)   # Country boundaries
+
+# Set working directory
 setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
 
-library(ncdf4)
-library(reshape2)
-library(ggplot2)
-library(terra)
-
-months_config <- list(
-  April  = list(month_day = "04-23", NDVI = "../WZMAllDOYs/Quantiles_113.nc"),   # 🌱
-  May    = list(month_day = "05-25", NDVI = "../WZMAllDOYs/Quantiles_145.nc"),   # ☀️
-  June   = list(month_day = "06-26", NDVI = "../WZMAllDOYs/Quantiles_177.nc"),   # 🌻
-  July   = list(month_day = "07-28", NDVI = "../WZMAllDOYs/Quantiles_209.nc"),   # 🌳
-  August = list(month_day = "08-29", NDVI = "../WZMAllDOYs/Quantiles_241.nc")    # 🍂
-)
-
-# Species-specific settings
+# Species configuration (with both psi and tdiff)
 species_config <- list(
-  Beech = list(
-    psi_nc   = "../Allan_Yixuan/PSImean_AMJJA_8days_Bu_bfv_20032024_compressed.nc",
-    tdiff_nc = "../Allan_Yixuan/TDiffsum_AMJJA_8days_Bu_bfv20032024_compressed.nc",
-    mask     = "results/Species_Maps/Beech_mask.tif"
+  Beech  = list(
+    psi   = "../ALLAN_PIA_SoilMoisture/PSIM/PSImean_rootzone_AMJJA_8days_Bu_bfv_20032024_compressed.nc",
+    tdiff = "../ALLAN_PIA_SoilMoisture/TDIFF/TDiffsum_AMJJA_8days_Bu_bfv20032024_compressed.nc"
   ),
-  Oak   = list(
-    psi_nc   = "../Allan_Yixuan/PSImean_AMJJA_8days_Ei_bfv_20032024_compressed.nc",
-    tdiff_nc = "../Allan_Yixuan/TDiffsum_AMJJA_8days_Ei_bfv20032024_compressed.nc",
-    mask     = "results/Species_Maps/Oak_mask.tif"
+  Oak    = list(
+    psi   = "../ALLAN_PIA_SoilMoisture/PSIM/PSImean_rootzone_AMJJA_8days_Ei_bfv_20032024_compressed.nc",
+    tdiff = "../ALLAN_PIA_SoilMoisture/TDIFF/TDiffsum_AMJJA_8days_Ei_bfv20032024_compressed.nc"
   ),
-  Spruce= list(
-    psi_nc   = "../Allan_Yixuan/PSImean_AMJJA_8days_Fi_bfv_20032024_compressed.nc",
-    tdiff_nc = "../Allan_Yixuan/TDiffsum_AMJJA_8days_Fi_bfv20032024_compressed.nc",
-    mask     = "results/Species_Maps/Spruce_mask.tif"
+  Spruce = list(
+    psi   = "../ALLAN_PIA_SoilMoisture/PSIM/PSImean_rootzone_AMJJA_8days_Fi_bfv_20032024_compressed.nc",
+    tdiff = "../ALLAN_PIA_SoilMoisture/TDIFF/TDiffsum_AMJJA_8days_Fi_bfv20032024_compressed.nc"
   ),
-  Pine  = list(
-    psi_nc   = "../Allan_Yixuan/PSImean_AMJJA_8days_Ki_bfv_20032024_compressed.nc",
-    tdiff_nc = "../Allan_Yixuan/TDiffsum_AMJJA_8days_Ki_bfv20032024_compressed.nc",
-    mask     = "results/Species_Maps/Pine_mask.tif"
+  Pine   = list(
+    psi   = "../ALLAN_PIA_SoilMoisture/PSIM/PSImean_rootzone_AMJJA_8days_Ki_bfv_20032024_compressed.nc",
+    tdiff = "../ALLAN_PIA_SoilMoisture/TDIFF/TDiffsum_AMJJA_8days_Ki_bfv20032024_compressed.nc"
   )
 )
 
-start_date <- "2003-01-01"
-years <- 2003:2024
+# Color-blind–friendly palette for species
+cb_palette <- c(
+  Oak    = "#E69F00",
+  Beech  = "#0072B2",
+  Spruce = "#009E73",
+  Pine   = "#F0E442"
+)
 
-transfer_psi_to_df <- function(nc_file, start_date) {
+# Load NDVI template (first layer)
+NDVI_template <- rast("../WZMAllDOYs/Quantiles_241.nc")[[1]]
+
+# Fetch Germany boundary from Natural Earth and reproject
+germany_border_gk <- ne_countries(
+  country     = "Germany",
+  scale       = "medium",
+  returnclass = "sf"
+) %>%
+  st_transform(crs(NDVI_template))
+
+# Create output directories
+dir.create("results_rootzone/Project_mean", recursive=TRUE, showWarnings=FALSE)
+dir.create("results_rootzone/Figures",      recursive=TRUE, showWarnings=FALSE)
+
+# Set target date and year
+target_date <- as.Date("2024-07-28")
+target_year <- 2024
+
+# Function 1: Process data and save to files
+process_variable_data <- function(var_name) {
+  message(sprintf("--- Processing data for %s ---", toupper(var_name)))
+  dfs <- list()
   
-  # Step 1: Open the NetCDF file
-  nc <- nc_open(nc_file)
+  # 1. Extract & project each species' layer
+  for (sp in names(species_config)) {
+    nc      <- species_config[[sp]][[var_name]]
+    rast_all<- rast(nc)
+    idx     <- which(time(rast_all) == target_date)
+    if (length(idx) != 1) {
+      warning(sprintf("Date %s not found for %s", target_date, sp))
+      next
+    }
+    single <- rast_all[[idx]]
+    proj   <- project(single, NDVI_template)
+    
+    # Save projected raster
+    out_tif <- file.path(
+      "results_rootzone/Project_mean",
+      sprintf("%s_%s_%s.tif", toupper(var_name), sp, format(target_date, "%Y_%m_%d"))
+    )
+    writeRaster(proj, out_tif, overwrite=TRUE)
+    
+    # Convert to data.frame
+    df <- as.data.frame(proj, xy=TRUE, na.rm=TRUE)
+    colnames(df)[3] <- var_name
+    df$species <- sp
+    df$year    <- target_year
+    dfs[[sp]]  <- df
+  }
   
-  # Step 2: Extract variables
-  time <- ncvar_get(nc, "time")
-  depth <- ncvar_get(nc, "depth")
-  x <- ncvar_get(nc, "x")
-  y <- ncvar_get(nc, "y")
-  psi <- ncvar_get(nc, "psi")
-  
-  # Convert time from "days since" format to actual dates
-  dates <- as.Date(start_date) + time
-  
-  # Close the NetCDF file
-  nc_close(nc)
-  
-  # Step 3: Assign meaningful dimension names
-  dimnames(psi) <- list(
-    x = x,
-    y = y,
-    depth = depth,
-    time = as.character(dates)
+  # 2. Combine & save CSV
+  all_df <- bind_rows(dfs)
+  write.csv(
+    all_df,
+    file.path("results_rootzone/Project_mean",
+              sprintf("%s_points_%s.csv", toupper(var_name), format(target_date, "%Y_%m_%d"))
+    ),
+    row.names=FALSE
   )
   
-  # Step 4: Transform the 4D array into a data frame
-  psi_melted <- melt(psi, varnames = c("x", "y", "depth", "time"), value.name = "soil_water_potential")
+  message(sprintf("Data processing completed for %s", toupper(var_name)))
+  return(invisible(TRUE))
+}
+
+# Function 2: Create value distribution map
+plot_distribution <- function(var_name, legend_title) {
+  message(sprintf("--- Creating mean distribution plot for %s ---", toupper(var_name)))
   
-  psi_melted <- na.omit(psi_melted)
-  return(psi_melted)
-}
-save_psi_melted <- function(psi_melted, file_path) {
-  write.csv(psi_melted, file_path, row.names = FALSE)
-}
-
-filter_psi <- function(psi_melted, month_day, depth) {
-  psi_melted <- na.omit(psi_melted)
-  psi_filter <- subset(psi_melted, 
-                       format(as.Date(time), "%m-%d") == month_day & depth == depth)
-  return(psi_filter)
-}
-
-save_psi_raster <- function(psi_melted, month_day, depth, output_dir) {
-  if (!dir.exists(output_dir)) {
-    dir.create(output_dir, recursive = TRUE)
-  }
-  psi <- filter_psi(psi_melted, month_day, depth)
-  psi$time <- as.Date(psi$time, format = "%Y-%m-%d")
-  years <- 2003:2024
-  for (year in years) {
-    psi_year <- psi %>% filter(format(time, "%Y") == as.character(year))
-    psi_selected <- psi_year[, c("x", "y", "soil_water_potential")]
-    psi_raster <- rast(psi_selected, type = "xyz")
-    crs(psi_raster) <- "epsg:31467"
-    output_path <- file.path(output_dir, paste0("psi_", year, ".tif"))
-    writeRaster(psi_raster, output_path, overwrite = TRUE)
-    cat("Raster saved for year:", year, "at", output_path, "\n")
-  }
-}
-
-depth_val = 100
-month_name = "August"
-month_day = "08-29"
-species_name = "Beech"
-Beech.df <- transfer_psi_to_df(species_config$Beech$psi_nc, start_date)
-Beech.df.filter <- filter_psi(Beech.df, month_day, depth)
-  
-  
-output_dir = file.path(sprintf("results_monthly_%d", depth_val), month_name, species_name)
-if (!dir.exists(output_dir)) {
-  dir.create(output_dir, recursive = TRUE)
-}
-
-save_psi_raster(psi_melted = df, month_day = "08-29", depth = depth_val, output_dir)
-
-
-
-# Check PSI at same pixels for different depth at same time
-
-Beech.day <- subset(Beech.df, time == "2003-04-15")
-set.seed(123)  
-unique_pixels_day <- unique(Beech.day[, c("x", "y")])
-sampled_pixels_day <- unique_pixels_day[sample(1:nrow(unique_pixels_day), 10), ]
-
-Beech.sampled.day <- Beech.day[Beech.day$x %in% sampled_pixels_day$x & Beech.day$y %in% sampled_pixels_day$y, ]
-
-library(ggplot2)
-
-ggplot(Beech.sampled.day, aes(x = depth, y = soil_water_potential, color = factor(paste(x, y)))) +
-  geom_line() +
-  geom_point() +
-  scale_x_reverse() +  
-  labs(x = "Depth (cm)", y = "Soil Water Potential", color = "Pixel (x, y)") +
-  theme_minimal()
-
-### test results ###
-library(terra)
-library(dplyr)
-library(ggplot2)
-library(viridis)
-
-# 1) Load your two rasters
-r50  <- rast("results_monthly_50/April/Beech/psi_2024.tif")
-r100 <- rast("results_monthly_100/April/Beech/psi_2024.tif")
-
-par(mfrow = c(1, 2), 
-    mar    = c(5, 4, 4, 2))
-plot(r50,
-     main = "Depth 50")
-plot(r100,
-     main = "Depth 100")
-par(mfrow = c(1, 1))
-
-# 2) Convert each to a data.frame with x, y, and the psi value
-df50  <- as.data.frame(r50,  xy = TRUE) %>%
-  rename(psi = 3) %>%
-  mutate(depth = "Depth = 50 cm")
-
-df100 <- as.data.frame(r100, xy = TRUE) %>%
-  rename(psi = 3) %>%
-  mutate(depth = "Depth = 100 cm")
-
-# 3) Combine and compute global range
-df  <- bind_rows(df50, df100)
-rng <- range(df$psi, na.rm = TRUE)
-
-# 4) Plot with viridis, white background, and panel borders
-ggplot(df, aes(x = x, y = y, fill = psi)) +
-  geom_raster() +
-  facet_wrap(~ depth, ncol = 2) +
-  coord_equal() +
-  scale_fill_viridis_c(
-    option = "viridis",
-    limits = rng,
-    name   = expression(psi~"(2024)")
-  ) +
-  labs(x = NULL, y = NULL) +
-  theme_minimal(base_size = 12) +
-  theme(
-    # white plot background
-    plot.background    = element_rect(fill = "white", color = NA),
-    panel.background   = element_rect(fill = "white", color = NA),
-    # black border around each facet
-    panel.border       = element_rect(color = "black", fill = NA, linewidth = 0.5),
-    # remove grid lines
-    panel.grid         = element_blank(),
-    # adjust legend bar thickness
-    legend.key.height  = unit(2, "cm"),
-    legend.title       = element_text(size = 11),
-    legend.text        = element_text(size = 9),
-    strip.text         = element_text(size = 12)
+  # Load existing CSV file
+  csv_file <- file.path(
+    "results_rootzone/Project_mean",
+    sprintf("%s_points_%s.csv", toupper(var_name), format(target_date, "%Y_%m_%d"))
   )
+  
+  if (!file.exists(csv_file)) {
+    warning(sprintf("CSV file not found: %s", csv_file))
+    return(NULL)
+  }
+  
+  all_df <- read.csv(csv_file)
+  
+  # Prepare data for plotting
+  dfm <- all_df %>%
+    group_by(x, y, species, year) %>%
+    summarise(mean_val = mean(.data[[var_name]], na.rm=TRUE), .groups="drop") %>%
+    mutate(species = factor(species, levels=c("Oak","Beech","Spruce","Pine")))
+  
+  # Define color palette
+  pal <- if (var_name=="psi") rev(c("blue","dodgerblue","cyan","yellow","orange","red"))
+  else c("blue","dodgerblue","cyan","yellow","orange","red")
+  
+  # Create plot
+  p_dist <- ggplot(dfm, aes(x=x, y=y, color=mean_val)) +
+    geom_point(size=0.5) +
+    geom_sf(data=germany_border_gk, fill=NA, color="black", inherit.aes=FALSE) +
+    scale_color_gradientn(colours=pal, name=legend_title) +
+    facet_grid(species ~ year) +
+    coord_sf(crs=crs(NDVI_template), expand=FALSE) +
+    labs(x="longitude", y="latitude") +
+    theme_minimal() +
+    theme(
+      legend.position  = "top",
+      axis.title       = element_text(face="bold", size=16),
+      axis.text        = element_text(size=14, color="black"),
+      strip.text       = element_text(face="bold", size=12),
+      panel.border     = element_rect(color="black", fill=NA),
+      panel.grid       = element_blank()
+    )
+  
+  # Save plot
+  ggsave(
+    file.path("results_rootzone/Figures",
+              sprintf("mean_%s_all_species_%s.png", var_name, format(target_date, "%Y_%m_%d"))
+    ),
+    p_dist, width=14, height=6, dpi=300
+  )
+  
+  message(sprintf("Mean distribution plot completed for %s", toupper(var_name)))
+  return(invisible(TRUE))
+}
 
+# Function 3: Create faceted scatter plot (Oak vs others)
+plot_faceted_scatter <- function(var_name) {
+  message(sprintf("--- Creating faceted scatter plot for %s ---", toupper(var_name)))
+  
+  # Load TIFF files
+  tifs <- list.files(
+    "results_rootzone/Project_mean",
+    pattern    = sprintf("^%s_.*_%s\\.tif$", toupper(var_name), format(target_date, "%Y_%m_%d")),
+    full.names = TRUE
+  )
+  
+  if (length(tifs) == 0) {
+    warning(sprintf("No TIFF files found for %s", var_name))
+    return(NULL)
+  }
+  
+  names(tifs) <- sub(
+    sprintf("^%s_(.*)_%s\\.tif$", toupper(var_name), format(target_date, "%Y_%m_%d")),
+    "\\1", basename(tifs)
+  )
+  
+  # Sample random points
+  st <- rast(tifs)
+  set.seed(42)
+  samp <- sampleRandom(st, 10000, xy=TRUE, na.rm=TRUE)
+  df_s <- as.data.frame(samp)
+  
+  # Prepare data for plotting
+  df_long <- df_s %>%
+    pivot_longer(
+      cols = setdiff(names(df_s), c("x","y","Oak")),
+      names_to = "species",
+      values_to = "value"
+    )
+  
+  # Create faceted scatter plot
+  p_facet <- ggplot(df_long, aes(x=value, y=Oak, color=species)) +
+    geom_point(alpha=0.5, size=1) +
+    facet_wrap(~species, ncol=1) +
+    scale_color_manual(values=cb_palette) +
+    labs(x=sprintf("Other %s", toupper(var_name)),
+         y=sprintf("Oak %s", toupper(var_name))) +
+    theme_minimal() +
+    theme(
+      legend.position  = "top",
+      axis.title       = element_text(face="bold", size=16),
+      axis.text        = element_text(size=14, color="black"),
+      strip.text       = element_text(face="bold", size=12),
+      panel.border     = element_rect(color="black", fill=NA),
+      panel.grid       = element_blank()
+    )
+  
+  # Save plot
+  ggsave(
+    file.path("results_rootzone/Figures",
+              sprintf("scatter_facet_Oak_vs_others_%s.png", var_name)
+    ),
+    p_facet, width=5, height=15, dpi=300
+  )
+  
+  message(sprintf("Faceted scatter plot completed for %s", toupper(var_name)))
+  return(invisible(TRUE))
+}
+
+# Function 4: Create overlay scatter plot (Oak vs others)
+plot_overlay_scatter <- function(var_name) {
+  message(sprintf("--- Creating overlay scatter plot for %s ---", toupper(var_name)))
+  
+  # Load TIFF files
+  tifs <- list.files(
+    "results_rootzone/Project_mean",
+    pattern    = sprintf("^%s_.*_%s\\.tif$", toupper(var_name), format(target_date, "%Y_%m_%d")),
+    full.names = TRUE
+  )
+  
+  if (length(tifs) == 0) {
+    warning(sprintf("No TIFF files found for %s", var_name))
+    return(NULL)
+  }
+  
+  names(tifs) <- sub(
+    sprintf("^%s_(.*)_%s\\.tif$", toupper(var_name), format(target_date, "%Y_%m_%d")),
+    "\\1", basename(tifs)
+  )
+  
+  # Sample random points
+  st <- rast(tifs)
+  set.seed(42)
+  samp <- sampleRandom(st, 10000, xy=TRUE, na.rm=TRUE)
+  df_s <- as.data.frame(samp)
+  
+  # Prepare data for plotting
+  df_long <- df_s %>%
+    pivot_longer(
+      cols = setdiff(names(df_s), c("x","y","Oak")),
+      names_to = "species",
+      values_to = "value"
+    )
+  
+  # Create overlay scatter plot
+  p_overlay <- ggplot(df_long, aes(x=value, y=Oak, color=species)) +
+    geom_point(alpha=0.5, size=1) +
+    scale_color_manual(values=cb_palette) +
+    labs(x=sprintf("Other %s", toupper(var_name)),
+         y=sprintf("Oak %s", toupper(var_name))) +
+    theme_minimal() +
+    theme(
+      legend.position  = "top",
+      axis.title       = element_text(face="bold", size=16),
+      axis.text        = element_text(size=14, color="black"),
+      panel.border     = element_rect(color="black", fill=NA),
+      panel.grid       = element_blank()
+    )
+  
+  # Save plot
+  ggsave(
+    file.path("results_rootzone/Figures",
+              sprintf("scatter_overlay_Oak_vs_others_%s.png", var_name)
+    ),
+    p_overlay, width=6, height=6, dpi=300
+  )
+  
+  message(sprintf("Overlay scatter plot completed for %s", toupper(var_name)))
+  return(invisible(TRUE))
+}
+
+# Function 5: Master plotting function that calls all individual plot functions
+plot_variable <- function(var_name, legend_title) {
+  message(sprintf("--- Creating all plots for %s ---", toupper(var_name)))
+  
+  # Create all plot types
+  plot_mean_distribution(var_name, legend_title)
+  plot_faceted_scatter(var_name)
+  plot_overlay_scatter(var_name)
+  
+  message(sprintf("All plots completed for %s", toupper(var_name)))
+  return(invisible(TRUE))
+}
+
+# OPTION 1: Process data first (if files don't exist yet)
+process_variable_data("psi")
+process_variable_data("tdiff")
+
+# OPTION 2: Create all plots
+plot_variable("psi", "soil water potential (kPa)")
+plot_variable("tdiff", "transpiration deficit (mm)")
+
+# OPTION 3: Create individual plots (if you want to run them separately)
+plot_mean_distribution("psi", "soil water potential (kPa)")
+plot_faceted_scatter("psi")
+plot_overlay_scatter("psi")
+plot_mean_distribution("tdiff", "transpiration deficit (mm)")
+plot_faceted_scatter("tdiff")
+plot_overlay_scatter("tdiff")

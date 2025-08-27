@@ -1,160 +1,137 @@
-plot_soil_fraction_composite <- function(
-    species_order = c("Oak", "Beech", "Spruce", "Pine"),
-    soil_map_dir = "soil_map",
-    result_data_dir = "results_rootzone/Data",
-    result_fig_dir = "results_rootzone/Figures",
-    lut_path = file.path(soil_map_dir, "feinbod_lookup_with_english.csv"),
-    texture_path = file.path(soil_map_dir, "soil_texture_classes.csv"),
-    output_plot = file.path(result_fig_dir, "all_species_soil_fractions_composite.png"),
-    output_csv  = file.path(result_data_dir, "soil_fraction_values.csv"),
-    plot_width  = 12,
-    plot_height = 12,
-    plot_dpi    = 300
-) {
-  # Load required libraries
-  library(terra)
-  library(dplyr)
-  library(ggplot2)
-  library(sf)
-  library(rnaturalearth)
-  library(rnaturalearthdata)
-  library(patchwork)
+# Set working directory and load packages
+setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
+library(dplyr)
+library(ggplot2)
+library(terra)
+library(GGally)
+library(patchwork)
+
+# Create directory for figures
+figures_dir <- "results_rootzone/Figures"
+dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Load and combine rasters
+PSI_Oak_2024_07_28_TIFF <- rast("results_rootzone/Project_mean/PSI_Oak_2024_07_28.tif")
+PSI_Beech_2024_07_28_TIFF <- rast("results_rootzone/Project_mean/PSI_Beech_2024_07_28.tif")
+PSI_Spruce_2024_07_28_TIFF <- rast("results_rootzone/Project_mean/PSI_Spruce_2024_07_28.tif")
+PSI_Pine_2024_07_28_TIFF <- rast("results_rootzone/Project_mean/PSI_Pine_2024_07_28.tif")
+
+names(PSI_Oak_2024_07_28_TIFF) <- "PSI_Oak_2024_07_28"
+names(PSI_Beech_2024_07_28_TIFF) <- "PSI_Beech_2024_07_28"
+names(PSI_Spruce_2024_07_28_TIFF) <- "PSI_Spruce_2024_07_28"
+names(PSI_Pine_2024_07_28_TIFF) <- "PSI_Pine_2024_07_28"
+
+PSI_2024_07_28_TIFF <- c(PSI_Oak_2024_07_28_TIFF,
+                         PSI_Beech_2024_07_28_TIFF,
+                         PSI_Spruce_2024_07_28_TIFF,
+                         PSI_Pine_2024_07_28_TIFF)
+
+# Randomly sample 1000 points (excluding NA values)
+set.seed(123) # for reproducibility
+sample_points <- spatSample(PSI_2024_07_28_TIFF, size = 1000, method = "random", 
+                            na.rm = TRUE, as.df = TRUE)
+
+# Check the structure of sampled data
+cat("Sample data structure:\n")
+print(str(sample_points))
+cat("\nNumber of non-NA samples:", nrow(sample_points), "\n")
+
+# Rename columns for better readability
+colnames(sample_points) <- c("Oak", "Beech", "Spruce", "Pine")
+
+# Option 1: Comprehensive scatter plot matrix using GGally
+cat("Creating scatter plot matrix...\n")
+scatter_matrix <- ggpairs(sample_points,
+                          title = "Scatter Plot Matrix of PSI Values (1000 random points)",
+                          lower = list(continuous = wrap("points", alpha = 0.6, size = 1)),
+                          diag = list(continuous = wrap("barDiag", bins = 20)),
+                          upper = list(continuous = wrap("cor", size = 4))) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# Save scatter plot matrix
+ggsave(file.path(figures_dir, "PSI_scatter_matrix.png"), scatter_matrix, 
+       width = 12, height = 10, dpi = 300)
+cat("Saved: PSI_scatter_matrix.png\n")
+
+# Option 2: Individual scatter plots for each pair
+cat("Creating individual scatter plots...\n")
+layer_names <- c("Oak", "Beech", "Spruce", "Pine")
+pairs <- combn(layer_names, 2, simplify = FALSE)
+
+# Create individual scatter plots
+plots <- list()
+
+for (pair in pairs) {
+  p <- ggplot(sample_points, aes(x = .data[[pair[1]]], y = .data[[pair[2]]])) +
+    geom_point(alpha = 0.6, size = 2, color = "steelblue") +
+    geom_smooth(method = "lm", se = TRUE, color = "red", fill = "pink", alpha = 0.3) +
+    labs(x = paste0(pair[1], " PSI (kPa)"),
+         y = paste0(pair[2], " PSI (kPa)"),
+         title = paste0(pair[1], " vs ", pair[2])) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+          panel.grid.major = element_line(color = "grey90"),
+          panel.grid.minor = element_blank())
   
-  # Read Germany boundary
-  boundary_germany <- ne_countries(
-    scale = "medium",
-    country = "Germany",
-    returnclass = "sf"
-  )
+  plots[[paste0(pair[1], "_vs_", pair[2])]] <- p
   
-  # Read lookup tables and build LUT
-  soil_descrip <- read.csv(lut_path, stringsAsFactors = FALSE)
-  soil_texture <- read.csv(texture_path, stringsAsFactors = FALSE)
-  lut <- soil_descrip %>%
-    select(feinbod_code, feinbod) %>%
-    inner_join(soil_texture, by = c("feinbod" = "code")) %>%
-    mutate(
-      clay_mid = (clay_lower + clay_upper) / 2,
-      silt_mid = (silt_lower + silt_upper) / 2,
-      sand_mid = (sand_lower + sand_upper) / 2
-    ) %>%
-    select(feinbod_code, clay_mid, silt_mid, sand_mid)
-  
-  # Function to generate fraction plots and data for one raster
-  make_fraction_plots <- function(raster_path) {
-    soil_code <- rast(raster_path)
-    clay_r <- subst(soil_code, from = lut$feinbod_code, to = lut$clay_mid); names(clay_r) <- "clay"
-    silt_r <- subst(soil_code, from = lut$feinbod_code, to = lut$silt_mid); names(silt_r) <- "silt"
-    sand_r <- subst(soil_code, from = lut$feinbod_code, to = lut$sand_mid); names(sand_r) <- "sand"
-    
-    clay_df <- as.data.frame(clay_r, xy = TRUE) %>% rename(value = clay) %>% filter(!is.na(value))
-    silt_df <- as.data.frame(silt_r, xy = TRUE) %>% rename(value = silt) %>% filter(!is.na(value))
-    sand_df <- as.data.frame(sand_r, xy = TRUE) %>% rename(value = sand) %>% filter(!is.na(value))
-    
-    base_theme <- theme_minimal() +
-      theme(
-        axis.text.x      = element_text(angle = 0, hjust = 0.5),
-        plot.background  = element_rect(fill = "white", color = "white"),
-        panel.background = element_rect(fill = "white"),
-        legend.background= element_rect(fill = "white", color = "white"),
-        plot.title       = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-        axis.title       = element_blank(),
-        axis.text        = element_text(color = "black", size = 14),
-        panel.border     = element_rect(color = "black", fill = NA, linewidth = 0.5),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        legend.position  = "bottom",
-        legend.key.width = unit(1.3, "cm"),
-        legend.key.height= unit(0.5, "cm"),
-        legend.text      = element_text(size = 14),
-        legend.title     = element_text(size = 14),
-        strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-        strip.text       = element_text(face = "bold", size = 12)
-      )
-    
-    p_clay <- ggplot(clay_df, aes(x = x, y = y, color = value)) +
-      geom_point(size = 0.5) +
-      geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
-      coord_sf(expand = FALSE) +
-      scale_color_gradientn(colours = c("white", "lightblue", "dodgerblue", "#0072B2"), name = "clay (%)") +
-      base_theme
-    
-    p_silt <- ggplot(silt_df, aes(x = x, y = y, color = value)) +
-      geom_point(size = 0.5) +
-      geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
-      coord_sf(expand = FALSE) +
-      scale_color_gradientn(colours = c("white", "#b9f6ca", "#00bfae", "#00675b"), name = "silt (%)") +
-      base_theme
-    
-    p_sand <- ggplot(sand_df, aes(x = x, y = y, color = value)) +
-      geom_point(size = 0.5) +
-      geom_sf(data = boundary_germany, fill = NA, color = "black", inherit.aes = FALSE) +
-      coord_sf(expand = FALSE) +
-      scale_color_gradientn(colours = c("white", "#ffe0b2", "orange", "#ff6600"), name = "sand (%)") +
-      base_theme
-    
-    list(
-      clay = p_clay,
-      silt = p_silt,
-      sand = p_sand,
-      data = bind_rows(
-        clay_df %>% mutate(fraction = "clay"),
-        silt_df %>% mutate(fraction = "silt"),
-        sand_df %>% mutate(fraction = "sand")
-      )
-    )
-  }
-  
-  # Prepare storage for plots and data
-  plot_list <- list()
-  soil_fraction_df <- tibble()
-  
-  # Generate plots per species
-  for (sp in species_order) {
-    raster_file <- file.path(soil_map_dir, paste0(sp, "_soilCode_MODIS.tif"))
-    res <- make_fraction_plots(raster_file)
-    plot_list[[sp]] <- res[c("clay", "silt", "sand")]
-    soil_fraction_df <- bind_rows(soil_fraction_df, res$data %>% mutate(species = sp))
-  }
-  
-  # Define desired row (fraction) order
-  fraction_order <- c("silt", "clay", "sand")
-  
-  # Build composite list: row-by-row
-  all_plots_list <- list()
-  for (fr in fraction_order) {
-    for (sp in species_order) {
-      p <- plot_list[[sp]][[fr]] +
-        labs(title = sp) +
-        theme(plot.margin = margin(5, 5, 2, 5))
-      all_plots_list <- c(all_plots_list, list(p))
-    }
-  }
-  
-  # Assemble and save composite
-  composite <- wrap_plots(all_plots_list,
-                          ncol = length(species_order),
-                          nrow = length(fraction_order),
-                          guides = "collect") &
-    theme(
-      legend.position = "bottom",
-      plot.background = element_rect(fill = "white", color = NA),
-      plot.margin     = margin(5, 5, 5, 5),
-      panel.spacing   = unit(0, "cm")
-    )
-  
-  ggsave(output_plot, composite,
-         width = plot_width,
-         height = plot_height,
-         dpi = plot_dpi,
-         bg = "white")
-  
-  # Save raw data
-  write.csv(soil_fraction_df, output_csv, row.names = FALSE)
-  
-  message("Composite plot saved to: ", output_plot)
-  message("Soil fraction data saved to: ", output_csv)
+  # Save each individual plot
+  ggsave(file.path(figures_dir, paste0("PSI_", pair[1], "_vs_", pair[2], ".png")), p, 
+         width = 8, height = 6, dpi = 300)
+  cat(paste0("Saved: PSI_", pair[1], "_vs_", pair[2], ".png\n"))
 }
 
+# Arrange individual plots in a grid
+cat("Arranging plots in grid...\n")
+grid_plot <- wrap_plots(plots, ncol = 2) + 
+  plot_annotation(title = "Pairwise Scatter Plots of PSI Values",
+                  theme = theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16)))
 
-plot_soil_fraction_composite()
+# Save grid of individual plots
+ggsave(file.path(figures_dir, "PSI_pairwise_scatters_grid.png"), grid_plot, 
+       width = 14, height = 12, dpi = 300)
+cat("Saved: PSI_pairwise_scatters_grid.png\n")
+
+# Option 3: Simple base R scatter matrix (saved as PNG)
+cat("Creating base R scatter matrix...\n")
+png(file.path(figures_dir, "PSI_baseR_scatter_matrix.png"), 
+    width = 10, height = 10, units = "in", res = 300)
+pairs(sample_points, 
+      main = "Scatter Plot Matrix of PSI Values (1000 random points)",
+      pch = 16, 
+      cex = 0.8,
+      col = rgb(0.2, 0.4, 0.6, 0.6),
+      gap = 0.5)
+dev.off()
+cat("Saved: PSI_baseR_scatter_matrix.png\n")
+
+# Additional analysis: Correlation matrix
+cat("\nCorrelation Analysis:\n")
+cor_matrix <- cor(sample_points, use = "complete.obs")
+print("Correlation Matrix:")
+print(round(cor_matrix, 3))
+
+# Save correlation matrix as CSV
+write.csv(round(cor_matrix, 3), file.path(figures_dir, "PSI_correlation_matrix.csv"))
+cat("Saved: PSI_correlation_matrix.csv\n")
+
+# Summary statistics
+cat("\nSummary Statistics:\n")
+summary_stats <- summary(sample_points)
+print(summary_stats)
+
+# Save summary statistics as CSV
+summary_df <- as.data.frame(do.call(cbind, lapply(sample_points, summary)))
+write.csv(summary_df, file.path(figures_dir, "PSI_summary_statistics.csv"))
+cat("Saved: PSI_summary_statistics.csv\n")
+
+# Create a comprehensive report of all files saved
+saved_files <- list.files(figures_dir, pattern = "PSI_")
+cat("\n=== FILES SAVED IN results_rootzone/Figures/ ===\n")
+for (file in saved_files) {
+  cat(paste0("- ", file, "\n"))
+}
+
+cat(paste0("\nAnalysis complete! All files saved in: ", figures_dir, "\n"))
+cat(paste0("Total files created: ", length(saved_files), "\n"))

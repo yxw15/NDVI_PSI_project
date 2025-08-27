@@ -137,3 +137,49 @@ plot_map <- function(df, var, title) {
 p <- plot_map(lai_df, "LAI", "LAI")
 print(p)  
 ggsave("results_lai/mean_LAI_by_species.png", p, width = 14, height = 6)
+
+
+plot_lai_map <- function(df, var, title,
+                     boundary = boundary_germany,
+                     palette = c("white", "#e8fce8", "#bafcb6", "lightgreen", "#59d269", "#228b22", "darkgreen"),
+                     limits = c(0, 5)) {
+  ggplot(df) +
+    geom_point(aes(x = x, y = y, color = .data[[var]]), size = 0.5) +
+    geom_sf(data = boundary, fill = NA, color = "black", inherit.aes = FALSE, linewidth = 0.8) +
+    scale_color_gradientn(
+      colours = palette,
+      values = scales::rescale(seq(limits[1], limits[2], length.out = length(palette)), from = limits),
+      limits = limits,
+      oob = scales::squish,
+      name = "leaf area index (LAI)"
+    ) +
+    facet_wrap(~species, nrow = 1) +
+    coord_sf(crs = 4326, expand = FALSE) +
+    labs(x = "longitude", y = "latitude") +
+    guides(color = guide_colorbar(title.position = "left", title.hjust = 0.5)) +
+    custom_theme
+}
+
+plot_mean_lai_bar <- function(df,
+                              var = "leaf area index (LAI)",
+                              species_levels = c("Oak", "Beech", "Spruce", "Pine"),
+                              title = "",
+                              palette = cb_palette) {
+  summary_df <- df %>%
+    group_by(species) %>%
+    summarize(mean_value = mean(.data[[var]], na.rm = TRUE)) %>%
+    mutate(species = factor(species, levels = species_levels))
+  
+  ggplot(summary_df, aes(x = species, y = mean_value, fill = species)) +
+    geom_col() +
+    scale_fill_manual(values = palette, name = "") +
+    labs(x = "", y = paste("mean", var), title = title) +
+    custom_theme +
+    theme(axis.text.x = element_text(angle = 0, hjust = 1))
+}
+
+p_map <- plot_lai_map(lai_df, "LAI", "Mean LAI by Species (DOY 209 & 241)")
+ggsave("results_lai/mean_LAI_map.png", p_map, width = 14, height = 6)
+
+p_bar <- plot_mean_lai_bar(lai_df)
+ggsave("results_lai/mean_LAI_bar.png", p_bar, width = 8, height = 6)
