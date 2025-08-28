@@ -238,7 +238,7 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
 }
 
 plot_time_series_and_correlation_combined(combined,
-                                          "results_rootzone/Figures/time_series_Quantiles_PSI_TDiff_species_rootzone.png")
+                                          "results_rootzone/Figures/main/time_series_Quantiles_PSI_TDiff_species_rootzone.png")
 
 ### Figure 2 - NDVI - PSI ###
 NDVI_PSIbin <- function(df, bin_width = 50) {
@@ -784,9 +784,9 @@ plot_NDVI_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output
 }
 
 plot_NDVI_PSI_exp_linear_slope_coeff(data, 
-                                     "results_rootzone/Figures/NDVI_Q_PSIbin_exp_linear_coeff.png",
-                                     "results_rootzone/Figures/NDVI_Q_PSIbin_exp_linear_slope.png",
-                                     "results_rootzone/Figures/NDVI_Q_PSIbin_exp_linear_aic.png")
+                                     "results_rootzone/Figures/supplymentary/NDVI_Q_PSIbin_exp_linear_coeff.png",
+                                     "results_rootzone/Figures/main/NDVI_Q_PSIbin_exp_linear_slope.png",
+                                     "results_rootzone/Figures/supplymentary/NDVI_Q_PSIbin_exp_linear_aic.png")
 ### Figure 2 - NDVI - TDiff ###
 NDVI_TDiffbin <- function(df, bin_width = 3) {
   
@@ -853,25 +853,8 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
   
   # Define species and palette
   value_col   <- "avg_value"
-  exp_species <- c("Oak", "Beech", "Spruce", "Pine")
-  data$species <- factor(data$species, levels = exp_species)
-  cb_palette  <- c(
-    "Oak"    = "#E69F00",
-    "Beech"  = "#0072B2",
-    "Spruce" = "#009E73",
-    "Pine"   = "#F0E442"
-  )
-  
-  # Prepare data
-  data_clean <- data %>%
-    mutate(x = bin_median) %>%
-    filter(!is.na(.data[[value_col]]), is.finite(x))
-  threshold <- 11.5
-  
-  # Define species and palette
-  value_col   <- "avg_value"
-  exp_species <- c("Oak", "Beech", "Spruce", "Pine")
-  data$species <- factor(data$species, levels = exp_species)
+  species_levels <- c("Oak", "Beech", "Spruce", "Pine")
+  data$species <- factor(data$species, levels = species_levels)
   cb_palette  <- c(
     "Oak"    = "#E69F00",
     "Beech"  = "#0072B2",
@@ -888,31 +871,48 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
   ##########################
   # AIC Comparison         #
   ##########################
-  start_nls <- list(a = 5, b = 7, c = 0.04)
-  ctrl      <- nls.control(maxiter = 1200, minFactor = 1e-9)
+  start_nls <- list(a = 5, b = 7, c = 0.04)          # for exp model: a + b*exp(-c*x)
+  ctrl_nls  <- nls.control(maxiter = 1200, minFactor = 1e-9)
   
-  aic_list <- lapply(exp_species, function(sp) {
-    df_sp <- filter(data_clean, species == sp)
-    lm_mod <- tryCatch(lm(avg_value ~ x, data = df_sp), error = function(e) NULL)
-    aic_l  <- if (!is.null(lm_mod)) AIC(lm_mod) else NA
-    exp_mod <- tryCatch(
-      nls(avg_value ~ a + b * exp(-c * x), data = df_sp,
-          start = start_nls, control = ctrl),
-      error = function(e) NULL
-    )
-    aic_e <- if (!is.null(exp_mod)) AIC(exp_mod) else NA
-    tibble(species = sp,
-           AIC_linear = aic_l,
-           AIC_exponential = aic_e)
-  }) %>% bind_rows()
+  # Fit both models per species and compute AICs
+  fits <- set_names(map(species_levels, function(sp) {
+    df_sp <- dplyr::filter(data_clean, species == sp)
+    res <- list(lm=NULL, nls=NULL, AIC_linear=NA_real_, AIC_exponential=NA_real_)
+    # Linear
+    if (nrow(df_sp) >= 2) {
+      res$lm <- tryCatch(lm(avg_value ~ x, data = df_sp), error = function(e) NULL)
+      if (!is.null(res$lm)) res$AIC_linear <- AIC(res$lm)
+    }
+    # Exponential
+    if (nrow(df_sp) >= 5) {
+      res$nls <- tryCatch(
+        nls(avg_value ~ a + b * exp(-c * x), data = df_sp,
+            start = start_nls, control = ctrl_nls),
+        error = function(e) NULL
+      )
+      if (!is.null(res$nls)) res$AIC_exponential <- AIC(res$nls)
+    }
+    # Choose best by AIC (lower is better)
+    aics <- c(linear = res$AIC_linear, exponential = res$AIC_exponential)
+    res$best <- if (all(is.na(aics))) NA_character_ else names(which.min(aics))
+    res$species <- sp
+    res
+  }), species_levels)
   
-  aic_long <- aic_list %>%
+  # AIC table for plotting (theme unchanged)
+  aic_df <- bind_rows(lapply(fits, function(f) {
+    tibble(species = f$species,
+           AIC_linear = f$AIC_linear,
+           AIC_exponential = f$AIC_exponential)
+  }))
+  
+  aic_long <- aic_df %>%
     pivot_longer(cols = c(AIC_linear, AIC_exponential),
                  names_to = "model", values_to = "AIC") %>%
     mutate(model = dplyr::recode(model,
                                  AIC_linear = "linear",
                                  AIC_exponential = "exponential"))
-  aic_long$species <- factor(aic_long$species, levels = exp_species)
+  aic_long$species <- factor(aic_long$species, levels = species_levels)
   
   p_aic <- ggplot(aic_long, aes(x = species, y = AIC, fill = model)) +
     geom_col(position = position_dodge(width = 0.7), width = 0.6) +
@@ -939,85 +939,154 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
   print(p_aic)
   ggsave(filename = aic_barplot_fig, plot = p_aic, width = 8, height = 6, dpi = 300)
   
-  # Model fitting parameters
-  start_list <- list(a = 5, b = 7, c = 0.04)
-  ctrl       <- nls.control(maxiter = 1200, minFactor = 1e-9)
+  ##########################
+  # Coefficient panels     #
+  ##########################
+  chosen_linear <- names(Filter(function(f) identical(f$best, "linear"), fits))
+  chosen_exp    <- names(Filter(function(f) identical(f$best, "exponential"), fits))
   
-  # Fit exponential models for all species
-  models_exp <- set_names(
-    map(exp_species, function(sp) {
-      sp_data <- filter(data_clean, species == sp)
-      tryCatch(
-        nls(avg_value ~ a + b * exp(-c * x), data = sp_data,
-            start = start_list, control = ctrl),
-        error = function(e) NULL
+  # Linear coefficients (theme kept consistent with your exponential panel)
+  lin_coef_df <- NULL
+  if (length(chosen_linear) > 0) {
+    lin_coef_df <- map_dfr(chosen_linear, function(sp) {
+      mod <- fits[[sp]]$lm
+      if (is.null(mod)) return(NULL)
+      summ <- summary(mod)$coefficients
+      tibble(
+        species     = sp,
+        Coefficient = dplyr::recode(rownames(summ), "(Intercept)" = "a", "x" = "b"),
+        Value       = summ[, "Estimate"],
+        pvalue      = summ[, "Pr(>|t|)"]
       )
-    }),
-    exp_species
-  )
+    }) %>%
+      mutate(
+        species = factor(species, levels = species_levels),
+        label   = if_else(pvalue < 0.05, "*", sprintf("%.2f", pvalue))
+      )
+  }
   
-  # Extract exponential coefficients
-  exp_coef_df <- map_dfr(exp_species, function(sp) {
-    mod <- models_exp[[sp]]
-    if (is.null(mod)) return(NULL)
-    summ <- summary(mod)$coefficients
-    tibble(
-      species     = sp,
-      Coefficient = tolower(rownames(summ)),
-      Value       = summ[, "Estimate"],
-      pvalue      = summ[, "Pr(>|t|)"]
-    )
-  }) %>%
-    mutate(
-      species = factor(species, levels = exp_species),
-      label   = if_else(pvalue < 0.05, "*", sprintf("%.2f", pvalue))
-    )
+  p_coeff_linear <- NULL
+  if (!is.null(lin_coef_df) && nrow(lin_coef_df) > 0) {
+    p_coeff_linear <- ggplot(lin_coef_df, aes(x = species, y = Value, fill = species)) +
+      geom_col(position = position_dodge(0.9)) +
+      geom_text(aes(label = label, y = Value/2), position = position_dodge(0.9), vjust = 0.5) +
+      scale_fill_manual(values = cb_palette) +
+      facet_wrap(~ Coefficient, scales = "free_y") +
+      labs(title = "linear models",
+           subtitle = expression(NDVI == a + b * x + epsilon),
+           x = NULL, y = "coefficient value", caption = "") +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 0, hjust = 0.5),
+        plot.background = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white"),
+        legend.background = element_rect(fill = "white", color = "white"),
+        plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+        plot.subtitle = element_text(hjust = 0.5, size = 14),
+        axis.title = element_text(face = "bold", size = 16),
+        axis.text = element_text(color = "black", size = 14),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "none",
+        legend.text = element_text(size = 14),
+        strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+        strip.text = element_text(face = "bold", size = 12)
+      )
+  }
   
-  p_coeff_exp <- ggplot(exp_coef_df, aes(x = species, y = Value, fill = species)) +
-    geom_col(position = position_dodge(0.9)) +
-    geom_text(aes(label = label, y = Value/2), position = position_dodge(0.9), vjust = 0.5) +
-    scale_fill_manual(values = cb_palette) +
-    facet_wrap(~ Coefficient, scales = "free_y") +
-    labs(title = "exponential models",
-         subtitle = expression(NDVI == a + b * e^{-~c * x} + epsilon),
-         x = NULL, y = "coefficient value", caption = "") +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(angle = 0, hjust = 0.5),
-      plot.background = element_rect(fill = "white", color = "white"),
-      panel.background = element_rect(fill = "white"),
-      legend.background = element_rect(fill = "white", color = "white"),
-      plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-      plot.subtitle = element_text(hjust = 0.5, size = 14),
-      axis.title = element_text(face = "bold", size = 16),
-      axis.text = element_text(color = "black", size = 14),
-      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      legend.position = "none",
-      legend.text = element_text(size = 14),
-      strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
-      strip.text = element_text(face = "bold", size = 12)
-    ) 
+  # Exponential coefficients (same as your original styling)
+  exp_coef_df <- NULL
+  if (length(chosen_exp) > 0) {
+    exp_coef_df <- map_dfr(chosen_exp, function(sp) {
+      mod <- fits[[sp]]$nls
+      if (is.null(mod)) return(NULL)
+      summ <- summary(mod)$coefficients
+      tibble(
+        species     = sp,
+        Coefficient = tolower(rownames(summ)),
+        Value       = summ[, "Estimate"],
+        pvalue      = summ[, "Pr(>|t|)"]
+      )
+    }) %>%
+      mutate(
+        species = factor(species, levels = species_levels),
+        label   = if_else(pvalue < 0.05, "*", sprintf("%.2f", pvalue))
+      )
+  }
   
-  print(p_coeff_exp)
+  p_coeff_exp <- NULL
+  if (!is.null(exp_coef_df) && nrow(exp_coef_df) > 0) {
+    p_coeff_exp <- ggplot(exp_coef_df, aes(x = species, y = Value, fill = species)) +
+      geom_col(position = position_dodge(0.9)) +
+      geom_text(aes(label = label, y = Value/2), position = position_dodge(0.9), vjust = 0.5) +
+      scale_fill_manual(values = cb_palette) +
+      facet_wrap(~ Coefficient, scales = "free_y") +
+      labs(title = "exponential models",
+           subtitle = expression(NDVI == a + b * e^{-~c * x} + epsilon),
+           x = NULL, y = "coefficient value", caption = "") +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 0, hjust = 0.5),
+        plot.background = element_rect(fill = "white", color = "white"),
+        panel.background = element_rect(fill = "white"),
+        legend.background = element_rect(fill = "white", color = "white"),
+        plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
+        plot.subtitle = element_text(hjust = 0.5, size = 14),
+        axis.title = element_text(face = "bold", size = 16),
+        axis.text = element_text(color = "black", size = 14),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position = "none",
+        legend.text = element_text(size = 14),
+        strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+        strip.text = element_text(face = "bold", size = 12)
+      )
+  }
   
-  # Generate predictions for all species
-  pred_exp <- map_dfr(exp_species, function(sp) {
-    sp_data <- filter(data_clean, species == sp)
+  # Combine coefficient panels (keep your themes)
+  combined_coeff <- if (!is.null(p_coeff_linear) && !is.null(p_coeff_exp)) {
+    p_coeff_linear + p_coeff_exp
+  } else if (!is.null(p_coeff_linear)) {
+    p_coeff_linear
+  } else if (!is.null(p_coeff_exp)) {
+    p_coeff_exp
+  } else {
+    ggplot() + theme_void()
+  }
+  
+  print(combined_coeff)
+  ggsave(combined_coef_fig, combined_coeff, width = 10, height = 8, dpi = 300)
+  
+  ##########################
+  # Predictions (Panel A)  #
+  ##########################
+  predict_best <- function(sp, x_seq) {
+    f <- fits[[sp]]
+    if (is.na(f$best)) return(NULL)
+    if (f$best == "linear") {
+      stats::predict(f$lm, newdata = data.frame(x = x_seq))
+    } else {
+      stats::predict(f$nls, newdata = data.frame(x = x_seq))
+    }
+  }
+  
+  pred_all <- map_dfr(species_levels, function(sp) {
+    sp_data <- dplyr::filter(data_clean, species == sp)
+    if (nrow(sp_data) == 0) return(NULL)
     x_seq <- seq(min(sp_data$x, na.rm = TRUE), max(sp_data$x, na.rm = TRUE), length.out = 100)
-    mod <- models_exp[[sp]]
-    if (is.null(mod)) return(NULL)
-    pred <- predict(mod, newdata = data.frame(x = x_seq))
-    tibble(species = sp, x = x_seq, pred = pred)
+    yhat  <- predict_best(sp, x_seq)
+    if (is.null(yhat)) return(NULL)
+    tibble(species = sp, x = x_seq, pred = yhat)
   })
   
-  # Combined final plot (Panel A)
+  # Combined final plot (Panel A) — theme unchanged
   p_combined <- ggplot() +
     geom_point(data = data_clean,
                aes(x = x, y = avg_value, color = species, shape = species, size = percentage),
                alpha = 0.7) +
-    geom_line(data = pred_exp,
+    geom_line(data = pred_all,
               aes(x = x, y = pred, color = species), linewidth = 1) +
     geom_hline(yintercept = threshold, linetype = "dashed", linewidth = 1) +
     annotate("text", x = 32, y = threshold,
@@ -1045,24 +1114,50 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
       legend.background = element_rect(fill = "white", color = "white")
     )
   
-  # Stats for x50 and slope for all species
-  stats_all <- map_dfr(exp_species, function(sp) {
-    mod <- models_exp[[sp]]
-    coefs <- coef(mod)
-    a_val <- coefs["a"]; b_val <- coefs["b"]; c_val <- coefs["c"]
-    x50 <- ifelse((threshold - a_val)>0 & b_val>0, -log((threshold - a_val)/b_val)/c_val, NA)
-    slope50 <- -c_val * (threshold - a_val)
-    abs_slope <- abs(slope50)
-    sp_data <- filter(data_clean, species == sp)
-    fitted_vals <- predict(mod, newdata = sp_data)
-    r2 <- 1 - sum((sp_data[[value_col]] - fitted_vals)^2) / sum((sp_data[[value_col]] - mean(sp_data[[value_col]]))^2)
-    dm <- deltaMethod(mod, paste0("c*(a - ", threshold, ")"), parameterNames=c("a","b","c"))
-    se <- dm$SE; df_exp <- summary(mod)$df[2]; t_val <- slope50/se; p_val <- 2*(1-pt(abs(t_val), df_exp))
-    tibble(species=sp, x50=x50, abs_slope=abs_slope, r_squared=r2, se=se, p_val=p_val)
-  }) %>%
-    mutate(species=factor(species, levels=exp_species))
+  ############################################
+  # Stats (Panels B & C) from chosen models  #
+  ############################################
+  one_species_stats <- function(sp) {
+    f <- fits[[sp]]
+    if (is.na(f$best)) return(NULL)
+    sp_data <- dplyr::filter(data_clean, species == sp)
+    
+    if (f$best == "linear") {
+      summ <- summary(f$lm)$coefficients
+      a <- summ["(Intercept)", "Estimate"]
+      b <- summ["x", "Estimate"]
+      se_b <- summ["x", "Std. Error"]
+      p_b  <- summ["x", "Pr(>|t|)"]
+      r2   <- summary(f$lm)$r.squared
+      x50  <- (threshold - a) / b
+      tibble(species = sp, x50 = x50, abs_slope = abs(b),
+             r_squared = r2, se = se_b, p_val = p_b)
+    } else {
+      coefs <- coef(f$nls); a <- coefs["a"]; b <- coefs["b"]; c <- coefs["c"]
+      x50 <- ifelse((threshold - a) > 0 & b > 0, -log((threshold - a)/b)/c, NA_real_)
+      slope50 <- -c * (threshold - a)
+      abs_slope <- abs(slope50)
+      fitted_vals <- predict(f$nls, newdata = sp_data)
+      r2 <- 1 - sum((sp_data[[value_col]] - fitted_vals)^2) /
+        sum((sp_data[[value_col]] - mean(sp_data[[value_col]]))^2)
+      dm <- tryCatch(
+        car::deltaMethod(f$nls, paste0("c*(a - ", threshold, ")"),
+                         parameterNames = c("a","b","c")),
+        error = function(e) NULL
+      )
+      se <- if (is.null(dm)) NA_real_ else dm$SE
+      df_exp <- tryCatch(summary(f$nls)$df[2], error = function(e) NA_real_)
+      p_val <- if (is.finite(se) && !is.na(df_exp))
+        2*(1-pt(abs(slope50/se), df_exp)) else NA_real_
+      tibble(species = sp, x50 = x50, abs_slope = abs_slope,
+             r_squared = r2, se = se, p_val = p_val)
+    }
+  }
   
-  # Panel B: x50
+  stats_all <- bind_rows(lapply(species_levels, one_species_stats)) %>%
+    mutate(species = factor(species, levels = species_levels))
+  
+  # Panel B: x50 (theme unchanged)
   p_x50 <- ggplot(stats_all, aes(x=species, y=x50, fill=species)) +
     geom_col(width=0.7) + scale_fill_manual(values=cb_palette, guide=FALSE) +
     labs(y="transpiration deficit (mm)", x="") + ggtitle("(b)") +
@@ -1079,7 +1174,8 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
       legend.text       = element_text(size = 14),
       legend.background = element_rect(fill = "white", color = "white")
     )
-  # Panel C: slope
+  
+  # Panel C: slope (theme unchanged)
   p_slope <- ggplot(stats_all, aes(x=species, y=abs_slope, fill=species)) +
     geom_col(width=0.7) +
     geom_errorbar(aes(ymin=pmax(0, abs_slope-se), ymax=abs_slope+se), width=0.2) +
@@ -1100,31 +1196,31 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
       legend.text       = element_text(size = 14),
       legend.background = element_rect(fill = "white", color = "white")
     )
-  # Combine panels
+  
+  # Combine panels (theme unchanged)
   final_plot <- (p_combined + (p_x50 / p_slope)) +
     plot_layout(widths=c(2,1), guides="collect") &
     theme(legend.position="bottom", legend.title=element_blank())
   print(final_plot)
   
-  #### Plateau point calculation for exponential models (Spruce & Pine only)
-  plateau_df <- lapply(exp_species, function(sp) {
-    mod <- models_exp[[sp]]
+  #### Plateau point calculation — only for species with chosen exponential model
+  plateau_df <- bind_rows(lapply(chosen_exp, function(sp) {
+    mod <- fits[[sp]]$nls
     if (is.null(mod)) return(NULL)
-    coefs <- coef(mod)
-    c_val <- coefs["c"]
+    c_val <- coef(mod)["c"]
     x_plateau <- -log(0.05) / c_val
     data.frame(species = sp, x_plateau = x_plateau)
-  }) %>% bind_rows()
+  }))
   
-  print("Estimated soil water potential (x_plateau) where NDVI is ~95% of its asymptotic minimum:")
+  print("Estimated transpiration deficit (x_plateau) where NDVI is ~95% of its asymptotic minimum (chosen exponential models only):")
   print(plateau_df)
   
   # Save outputs
-  ggsave(combined_coef_fig, p_coeff_exp, width=10, height=8, dpi=300)
+  ggsave(combined_coef_fig, combined_coeff, width=10, height=8, dpi=300)
   ggsave(output_figure, final_plot, width=10, height=8, dpi=300)
 }
 
 plot_NDVI_TDiff_exp_slope_coeff(data,
-                                "results_rootzone/Figures/NDVI_Q_TDiffbin_exp_coeff.png",
-                                "results_rootzone/Figures/NDVI_Q_TDiffbin_exp_slope.png",
-                                "results_rootzone/Figures/NDVI_Q_TDiffbin_exp_aic.png")
+                                "results_rootzone/Figures/supplymentary/NDVI_Q_TDiffbin_exp_coeff.png",
+                                "results_rootzone/Figures/main/NDVI_Q_TDiffbin_exp_slope.png",
+                                "results_rootzone/Figures/supplymentary/NDVI_Q_TDiffbin_exp_aic.png")
