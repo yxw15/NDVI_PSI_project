@@ -20,8 +20,7 @@ suppressPackageStartupMessages({
 root_dir <- "/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project"
 setwd(root_dir)
 
-target_date <- as.Date("2024-07-28")
-target_year <- 2024
+# will be set in the loop:
 sample_cap  <- 10000L
 
 species_config <- list(
@@ -82,6 +81,7 @@ palette_for <- function(var) {
 }
 
 save_plot <- function(plot, path, width, height, dpi = 300) {
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   ggplot2::ggsave(filename = path, plot = plot, width = width, height = height, dpi = dpi)
   message("✅ Saved: ", normalizePath(path, winslash = "/"))
 }
@@ -96,6 +96,16 @@ projected_tif_path <- function(var, sp) {
             sprintf("%s_%s_%s.tif", toupper(var), sp, format(target_date, "%Y_%m_%d")))
 }
 
+# Figure directory is per-year and per-mm-dd; filenames end with YEAR only.
+figure_dir <- function() {
+  file.path("results_rootzone/Figures",
+            sprintf("%04d", target_year),
+            format(target_date, "%m-%d"))
+}
+figure_path <- function(filename) {
+  file.path(figure_dir(), filename)
+}
+
 # --------------------------- NetCDF Date Extractor ----------------------------
 extract_date_layer <- function(nc_path, date) {
   r_all <- rast(nc_path)
@@ -106,7 +116,7 @@ extract_date_layer <- function(nc_path, date) {
 
 # ------------------------- 1) Process PSI & TDIFF -----------------------------
 process_variable_data <- function(var) {
-  message(sprintf("--- Processing %s ---", toupper(var)))
+  message(sprintf("--- Processing %s for %s ---", toupper(var), format(target_date)))
   dfs <- imap(species_config, function(paths, sp) {
     nc <- paths[[tolower(var)]]
     if (is.null(nc) || !file.exists(nc)) return(NULL)
@@ -145,12 +155,13 @@ plot_distribution <- function(var, legend_title) {
     coord_sf(crs = crs(NDVI_template), expand = FALSE) +
     labs(x = "longitude", y = "latitude") +
     theme_consistent(12)
-  out <- file.path("results_rootzone/Figures",
-                   sprintf("mean_%s_all_species_%s.png", var, format(target_date, "%Y_%m_%d")))
+  
+  # filename ends with year only, and lives in <Figures>/<YEAR>/<MM-DD>/
+  out <- figure_path(sprintf("%s_all_species_1x4_clean_%d.png", toupper(var), target_year))
   save_plot(p, out, width = 10, height = 4, dpi = 300)
 }
 
-# --------- 4) Same-pixel correlations (pairs, heatmap, selected pairs) -------
+# --------- 3) Same-pixel correlations (pairs, heatmap, selected pairs) -------
 cross_species_correlations <- function(var, sample_cap = 10000L, seed = 1234) {
   date_tag <- format(target_date, "%Y_%m_%d")
   r_dir <- "results_rootzone/Project_mean"
@@ -182,8 +193,7 @@ cross_species_correlations <- function(var, sample_cap = 10000L, seed = 1234) {
                              lower = list(continuous = GGally::wrap("points", alpha = 0.4, size = 0.6)),
                              diag  = list(continuous = GGally::wrap("densityDiag"))) +
     theme_consistent(12)
-  pairs_ggally <- file.path("results_rootzone/Figures",
-                            sprintf("%s_pairs_sample%d.png", toupper(var), n_samp))
+  pairs_ggally <- figure_path(sprintf("%s_pairs_sample%d_%d.png", toupper(var), n_samp, target_year))
   save_plot(p_pairs, pairs_ggally, width = 10, height = 10, dpi = 300)
   
   # B) Heatmap
@@ -197,8 +207,8 @@ cross_species_correlations <- function(var, sample_cap = 10000L, seed = 1234) {
     labs(title = paste(toupper(var), "correlations across species"),
          x = NULL, y = NULL) +
     theme_consistent(12)
-  heat_path <- file.path("results_rootzone/Figures",
-                         sprintf("%s_correlation_heatmap_sample%d.png", toupper(var), n_samp))
+  heat_path <- figure_path(sprintf("%s_correlation_heatmap_sample%d_%d.png",
+                                   toupper(var), n_samp, target_year))
   save_plot(p_heat, heat_path, width = 6.5, height = 5.2, dpi = 300)
   
   # C) Selected pairwise scatter panels
@@ -222,22 +232,47 @@ cross_species_correlations <- function(var, sample_cap = 10000L, seed = 1234) {
   plots <- lapply(pairs_to_plot, function(p) plot_pair(num_df, p[1], p[2]))
   combined <- (plots[[1]] | plots[[2]] | plots[[3]]) /
     (plots[[4]] | plots[[5]] | plots[[6]])
-  pairs_custom <- file.path("results_rootzone/Figures",
-                            sprintf("%s_pairs_corr_sample%d.png", toupper(var), n_samp))
+  pairs_custom <- figure_path(sprintf("%s_pairs_corr_sample%d_%d.png", toupper(var), n_samp, target_year))
   save_plot(combined, pairs_custom, width = 12, height = 8, dpi = 300)
 }
 
 # ------------------------------- Run Pipeline ---------------------------------
-process_variable_data("psi")
-process_variable_data("tdiff")
+run_for_date <- function(yr, month_day, sample_cap = 10000L) {
+  target_year <<- yr
+  target_date <<- as.Date(sprintf("%04d-%s", yr, month_day))
+  
+  message("\n==============================")
+  message(" Processing ", target_date, " (Year: ", target_year, ")")
+  message("==============================\n")
+  
+  # Ensure per-year/per-date figure dir exists
+  dir.create(figure_dir(), recursive = TRUE, showWarnings = FALSE)
+  
+  # 1) Process variables
+  process_variable_data("psi")
+  process_variable_data("tdiff")
+  
+  # 2) Maps
+  plot_distribution("psi",   "soil water potential (kPa)")
+  plot_distribution("tdiff", "transpiration deficit (mm)")
+  
+  # 3) Cross-species correlations
+  cross_species_correlations("psi",   sample_cap = sample_cap)
+  cross_species_correlations("tdiff", sample_cap = sample_cap)
+  
+  message("\nContents of Figures dir for this run:")
+  print(list.files(figure_dir(), full.names = TRUE))
+}
 
-plot_distribution("psi",   "soil water potential (kPa)")
-plot_distribution("tdiff", "transpiration deficit (mm)")
+# Years and dates to process
+years <- 2003:2024
+monthdays <- c("07-28", "08-29")
 
-cross_species_correlations("psi",   sample_cap = sample_cap)
-cross_species_correlations("tdiff", sample_cap = sample_cap)
+for (yr in years) {
+  for (md in monthdays) {
+    run_for_date(yr, md, sample_cap = sample_cap)
+  }
+}
 
-message("\nContents of Figures dir:")
-print(list.files("results_rootzone/Figures", pattern = "^(PSI|TDIFF)_.*\\.(png|csv)$",
-                 full.names = TRUE))
+message("\nAll processing finished ✅")
 # ==============================================================================
