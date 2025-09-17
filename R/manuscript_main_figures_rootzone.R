@@ -38,6 +38,8 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
   library(ggplot2)
   library(patchwork)
   library(dplyr)
+  library(broom)
+  library(purrr)
   
   # 1) Prepare species‐averaged data
   df_species <- df_average_year_species(df_all)
@@ -61,9 +63,8 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
     stop("Neither avg_quantile nor avg_proportion found in df_species.")
   }
   
-  # 3b) Print correlation coefficients by species
+  # 3b) Print correlation coefficients by species (r only)
   cat("Pearson correlations by species:\n")
-  
   df_species %>%
     group_by(species) %>%
     summarise(
@@ -72,6 +73,116 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
     ) %>%
     ungroup() %>%
     print()
+  
+  # --- NEW: Pearson r and p-values (per species) for NDVI~psi and NDVI~tdiff
+  corr_stats <- df_species %>%
+    group_by(species) %>%
+    reframe(
+      {
+        x1 <- avg_psi
+        y  <- .data[[ndvi_column]]
+        ok1 <- is.finite(x1) & is.finite(y); x1 <- x1[ok1]; y1 <- y[ok1]
+        if (length(x1) >= 3 && sd(x1) > 0 && sd(y1) > 0) {
+          ct1 <- suppressWarnings(cor.test(x1, y1, method = "pearson"))
+          r_psi  <- unname(ct1$estimate)
+          p_psi  <- ct1$p.value
+        } else { r_psi <- NA_real_; p_psi <- NA_real_ }
+        
+        x2 <- avg_tdiff
+        y  <- .data[[ndvi_column]]
+        ok2 <- is.finite(x2) & is.finite(y); x2 <- x2[ok2]; y2 <- y[ok2]
+        if (length(x2) >= 3 && sd(x2) > 0 && sd(y2) > 0) {
+          ct2 <- suppressWarnings(cor.test(x2, y2, method = "pearson"))
+          r_tdiff <- unname(ct2$estimate)
+          p_tdiff <- ct2$p.value
+        } else { r_tdiff <- NA_real_; p_tdiff <- NA_real_ }
+        
+        tibble(r_psi = r_psi, p_psi = p_psi, r_tdiff = r_tdiff, p_tdiff = p_tdiff)
+      }
+    ) %>% ungroup()
+  
+  cat("\nPearson r and p-values by species:\n")
+  print(corr_stats)
+  # --- END NEW
+  
+  # --- NEW: Linear regression significance (overall and coefficients)
+  # Fit per-species models: NDVI ~ avg_psi and NDVI ~ avg_tdiff
+  fit_linear <- function(df, xvar) {
+    df <- df %>% filter(is.finite(.data[[ndvi_column]]), is.finite(.data[[xvar]]))
+    if (nrow(df) < 3 || sd(df[[xvar]], na.rm = TRUE) == 0) return(NULL)
+    lm(stats::as.formula(paste(ndvi_column, "~", xvar)), data = df)
+  }
+  
+  # overall model p-values (F-test) and R^2
+  overall_tbl <- df_species %>%
+    group_by(species) %>%
+    reframe(
+      {
+        mod_psi   <- fit_linear(cur_data(), "avg_psi")
+        mod_tdiff <- fit_linear(cur_data(), "avg_tdiff")
+        out <- list()
+        if (!is.null(mod_psi)) {
+          g <- glance(mod_psi)
+          out[[length(out)+1]] <- tibble(
+            species = unique(species),
+            xvar = "avg_psi",
+            model_F_stat = g$statistic,
+            model_p_value = g$p.value,
+            r_squared = g$r.squared,
+            adj_r_squared = g$adj.r.squared,
+            df_residual = g$df.residual
+          )
+        }
+        if (!is.null(mod_tdiff)) {
+          g <- glance(mod_tdiff)
+          out[[length(out)+1]] <- tibble(
+            species = unique(species),
+            xvar = "avg_tdiff",
+            model_F_stat = g$statistic,
+            model_p_value = g$p.value,
+            r_squared = g$r.squared,
+            adj_r_squared = g$adj.r.squared,
+            df_residual = g$df.residual
+          )
+        }
+        bind_rows(out)
+      }
+    ) %>% ungroup()
+  
+  cat("\nLinear model significance (overall F-test) and R^2 (per species & predictor):\n")
+  print(overall_tbl)
+  
+  # coefficient p-values (a = intercept, b = slope)
+  coef_tbl <- df_species %>%
+    group_by(species) %>%
+    reframe(
+      {
+        rows <- list()
+        mod_psi <- fit_linear(cur_data(), "avg_psi")
+        if (!is.null(mod_psi)) {
+          td <- tidy(mod_psi) %>%
+            mutate(Coefficient = dplyr::recode(term, `(Intercept)` = "a", `avg_psi` = "b")) %>%
+            select(Coefficient, estimate, p.value) %>%
+            mutate(xvar = "avg_psi")
+          rows[[length(rows)+1]] <- td
+        }
+        mod_tdiff <- fit_linear(cur_data(), "avg_tdiff")
+        if (!is.null(mod_tdiff)) {
+          td <- tidy(mod_tdiff) %>%
+            mutate(Coefficient = dplyr::recode(term, `(Intercept)` = "a", `avg_tdiff` = "b")) %>%
+            select(Coefficient, estimate, p.value) %>%
+            mutate(xvar = "avg_tdiff")
+          rows[[length(rows)+1]] <- td
+        }
+        bind_rows(rows)
+      }
+    ) %>% ungroup() %>%
+    rename(Estimate = estimate, p_value = p.value) %>%
+    select(species, xvar, Coefficient, Estimate, p_value)
+  
+  cat("\nLinear coefficients (a: intercept, b: slope) with p-values (per species & predictor):\n")
+  print(coef_tbl)
+  # --- END NEW
   
   # 4) Common theme: transparent backgrounds, no grid
   base_theme <- theme_minimal() +
@@ -94,7 +205,6 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
                                 limits = c(2003, 2024))
   
   ### TIME‐SERIES PANELS (a), (b), (c)
-  
   p1 <- ggplot(df_species,
                aes(x = as.numeric(year),
                    y = .data[[ndvi_column]],
@@ -110,7 +220,7 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
     x_scale + base_theme +
     ggtitle("(a)") +
     theme(
-      plot.title.position = "panel",  # place title below collected legend
+      plot.title.position = "panel",
       plot.title          = element_text(
         face   = "bold",
         size   = 18,
@@ -171,7 +281,6 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
   ts_plot <- p1 / p2 / p3
   
   ### CORRELATION PANELS (d), (e)
-  
   p4 <- ggplot(df_species,
                aes(x = avg_psi,
                    y = .data[[ndvi_column]],
@@ -237,7 +346,7 @@ plot_time_series_and_correlation_combined <- function(df_all, output_path) {
          dpi    = 300)
 }
 
-plot_time_series_and_correlation_combined(combined,
+plot_time_series_and_correlation_combined(data,
                                           "results_rootzone/Figures/main/time_series_Quantiles_PSI_TDiff_species_rootzone.png")
 
 ### Figure 2 - NDVI - PSI ###
@@ -784,9 +893,9 @@ plot_NDVI_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output
 }
 
 plot_NDVI_PSI_exp_linear_slope_coeff(data, 
-                                     "results_rootzone/Figures/supplymentary/NDVI_Q_PSIbin_exp_linear_coeff.png",
+                                     "results_rootzone/Figures/supplementary/NDVI_Q_PSIbin_exp_linear_coeff.png",
                                      "results_rootzone/Figures/main/NDVI_Q_PSIbin_exp_linear_slope.png",
-                                     "results_rootzone/Figures/supplymentary/NDVI_Q_PSIbin_exp_linear_aic.png")
+                                     "results_rootzone/Figures/supplementary/NDVI_Q_PSIbin_exp_linear_aic.png")
 ### Figure 2 - NDVI - TDiff ###
 NDVI_TDiffbin <- function(df, bin_width = 3) {
   
@@ -1221,6 +1330,6 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
 }
 
 plot_NDVI_TDiff_exp_slope_coeff(data,
-                                "results_rootzone/Figures/supplymentary/NDVI_Q_TDiffbin_exp_coeff.png",
+                                "results_rootzone/Figures/supplementary/NDVI_Q_TDiffbin_exp_coeff.png",
                                 "results_rootzone/Figures/main/NDVI_Q_TDiffbin_exp_slope.png",
-                                "results_rootzone/Figures/supplymentary/NDVI_Q_TDiffbin_exp_aic.png")
+                                "results_rootzone/Figures/supplementary/NDVI_Q_TDiffbin_exp_aic.png")

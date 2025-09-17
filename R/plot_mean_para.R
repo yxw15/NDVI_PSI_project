@@ -1,5 +1,5 @@
 # Improved NDVI & PSI Temperature & VPD Processing Script
-# Author: [Your Name]
+# Author: Yixuan Wang
 # Date: 2025-05-29
 
 # 0) Setup -------------------------------------------------------------------

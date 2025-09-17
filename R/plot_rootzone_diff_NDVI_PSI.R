@@ -130,6 +130,9 @@ write.csv(bin_summary,
           file.path(results_dir, "bin_summary_rootzone.csv"),
           row.names = FALSE)
 
+##### Read saved data #####
+bin_summary <- read.csv(file.path(results_dir, "bin_summary_rootzone.csv"))
+
 #─── 6. Plot: scatter faceted by NDVI_species and DOY ─────────────────────────
 cb_palette <- c(Oak="#E69F00", Beech="#0072B2", Spruce="#009E73", Pine="#F0E442")
 plot_df <- bin_summary %>%
@@ -208,13 +211,13 @@ fit_curves <- function(df) {
   
   # 3) try exponential
   nls_fit <- tryCatch({
-    nls(avg_NDVI ~ a + b * exp(c * bin_median), data = df,
-        start = list(
-          a = min(df$avg_NDVI, na.rm = TRUE),
-          b = (max(df$avg_NDVI, na.rm = TRUE) - min(df$avg_NDVI, na.rm = TRUE))/2,
-          c = 0.001
-        ),
-        control = nls.control(maxiter = 1000))
+    start_list <- list(a = 5, b = 3, c = 0.001)
+    ctrl       <- nls.control(maxiter = 1200, minFactor = 1e-9)
+    
+    nls(avg_NDVI ~ a + b * exp(c * bin_median),
+        data    = df,
+        start   = start_list,
+        control = ctrl)
   }, error = function(e) NULL)
   
   use_exp <- FALSE

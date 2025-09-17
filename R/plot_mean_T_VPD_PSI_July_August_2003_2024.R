@@ -184,6 +184,7 @@ library(tidyr)
 es.func <- function(tmean) {
   6.11 * exp((2.5e6 / 461) * (1/273 - 1/(273 + tmean)))
 }
+
 vpd.func <- function(es.hy) {
   es <- es.hy[1]; hy <- es.hy[2]
   ((100 - hy) / 100) * es
@@ -547,7 +548,7 @@ ts_list        <- list()  # for per-year species means
 for (sp in species_list) {
   
   # read mask (same for all years)
-  mask_r <- rast(sprintf("results/%s/NDVI_mask/NDVI_%d_mask.tif", sp, years[1]))
+  mask_r <- rast(sprintf("species_map_MODIS/%d.tif", sp, years[1]))
   
   # temporary holders
   tmp_list <- list()

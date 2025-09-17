@@ -1,190 +1,101 @@
-# ------------------------- Setup & Packages -----------------------------------
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(ggplot2)
-  library(terra)
-  library(GGally)
-  library(readr)
-  library(patchwork)
-})
+setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
+load("results/Data/AllSpecies_AllMonths_rootzone.RData")
 
-# ---------------------------- Paths & Config ----------------------------------
-root_dir    <- "/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project"
-setwd(root_dir)
+library(tidyverse)
 
-date_tag    <- "2024_07_28"
-r_dir       <- "results_rootzone/Project_mean"
-figures_dir <- "results_rootzone/Figures"
-dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+data <- combined %>% filter(month %in% c("July", "August"))
+data <- data %>% filter(Quantiles > 0)
+data <- na.omit(data)
 
-# Output file names
-csv_path        <- file.path(figures_dir, "PSI_sample_common_pixels_1000.csv")
-pairs_ggally    <- file.path(figures_dir, "PSI_pairs_sample1000.png")
-heat_path       <- file.path(figures_dir, "PSI_correlation_heatmap_sample1000.png")
-pairs_custom    <- file.path(figures_dir, "PSI_selected_pairs.png")   # <-- pairs, not "paris"
-
-message("Figures will be saved to: ", normalizePath(figures_dir))
-
-# --------------------------- Load rasters -------------------------------------
-PSI_Oak    <- rast(file.path(r_dir, paste0("PSI_Oak_",    date_tag, ".tif")))
-PSI_Beech  <- rast(file.path(r_dir, paste0("PSI_Beech_",  date_tag, ".tif")))
-PSI_Spruce <- rast(file.path(r_dir, paste0("PSI_Spruce_", date_tag, ".tif")))
-PSI_Pine   <- rast(file.path(r_dir, paste0("PSI_Pine_",   date_tag, ".tif")))
-
-names(PSI_Oak)    <- paste0("PSI_Oak_",    date_tag)
-names(PSI_Beech)  <- paste0("PSI_Beech_",  date_tag)
-names(PSI_Spruce) <- paste0("PSI_Spruce_", date_tag)
-names(PSI_Pine)   <- paste0("PSI_Pine_",   date_tag)
-
-# Combine (assumes identical grid; align beforehand if needed)
-PSI_stack <- c(PSI_Oak, PSI_Beech, PSI_Spruce, PSI_Pine)
-
-# -------------------- Sample same pixels & extract values ---------------------
-set.seed(1234)
-
-# Mask of cells where ALL four layers are non-NA
-complete_mask <- terra::app(PSI_stack, function(v) as.integer(all(!is.na(v))))
-
-available <- as.integer(terra::global(complete_mask, "sum", na.rm = TRUE)[1, 1])
-message("Pixels with data for ALL species: ", available)
-if (available == 0L) stop("No common non-NA pixels across species.")
-
-# Choose sample size (up to 1000 or all if fewer)
-n_samp <- min(1000L, available)
-
-# Sample locations from the mask (identical pixels for all species)
-pts <- terra::spatSample(
-  x         = complete_mask,
-  size      = n_samp,
-  method    = "random",   # use "regular" for systematic sampling if preferred
-  as.points = TRUE,
-  na.rm     = TRUE,
-  values    = FALSE
-)
-
-# Extract PSI at those exact pixels
-samp_df <- terra::extract(PSI_stack, pts, xy = TRUE) |>
-  dplyr::select(-ID) |>
-  dplyr::rename(
-    Oak    = !!names(PSI_Oak),
-    Beech  = !!names(PSI_Beech),
-    Spruce = !!names(PSI_Spruce),
-    Pine   = !!names(PSI_Pine)
-  )
-
-# Save sampled values (with coordinates) for traceability
-readr::write_csv(samp_df, csv_path)
-message("Saved sampled values: ", normalizePath(csv_path))
-
-# ----------------------------- Correlations -----------------------------------
-num_df <- dplyr::select(samp_df, Oak, Beech, Spruce, Pine)
-
-corr_pearson  <- cor(num_df, use = "complete.obs", method = "pearson")
-corr_spearman <- cor(num_df, use = "complete.obs", method = "spearman")
-
-print(round(corr_pearson,  3))
-print(round(corr_spearman, 3))
-
-# ----------------------------- Visualizations ---------------------------------
-# A) Pairs plot over the same pixels (GGally)
-p_pairs <- GGally::ggpairs(
-  num_df,
-  progress = FALSE,
-  upper = list(continuous = GGally::wrap("cor", size = 3)),
-  lower = list(continuous = "points"),
-  diag  = list(continuous = "densityDiag")
-)
-
-# Robust saver for ggpairs
-save_pairs <- function(p, path, width = 10, height = 10, dpi = 300) {
-  tryCatch({
-    if ("GGally" %in% loadedNamespaces() && "ggsave" %in% getNamespaceExports("GGally")) {
-      GGally::ggsave(filename = path, plot = p, width = width, height = height, dpi = dpi)
-    } else {
-      ggplot2::ggsave(filename = path, plot = p, width = width, height = height, dpi = dpi)
-    }
-    message("Saved pairs plot: ", normalizePath(path))
-  }, error = function(e) {
-    png(path, width = width, height = height, units = "in", res = dpi)
-    print(p)
-    dev.off()
-    message("Saved pairs plot via PNG device: ", normalizePath(path))
-  })
+NDVI_PSIbin <- function(df, bin_width = 50) {
+  
+  # Identify correct value column
+  value_column <- if ("Quantiles" %in% names(df)) "Quantiles" else "Proportions"
+  
+  # Total pixel count per species
+  species_totals <- df %>%
+    group_by(species) %>%
+    summarise(total_pixels = n(), .groups = "drop")
+  
+  # Define bin breaks
+  psi_min <- floor(min(df$soil_water_potential, na.rm = TRUE))
+  psi_max <- ceiling(max(df$soil_water_potential, na.rm = TRUE))
+  bin_breaks <- seq(psi_min, psi_max, by = bin_width)
+  
+  # Bin the soil water potential values
+  df <- df %>%
+    mutate(PSI_bin = cut(soil_water_potential, breaks = bin_breaks, include.lowest = TRUE, right = FALSE))
+  
+  # Compute statistics for each species and bin, including filtering out bins with count < 2000
+  meanNDVI_PSIbin_species <- df %>%
+    group_by(species, PSI_bin) %>%
+    summarise(
+      avg_value = mean(.data[[value_column]], na.rm = TRUE),
+      count = n(),
+      .groups = 'drop'
+    ) %>%
+    mutate(
+      bin_median = sapply(as.character(PSI_bin), function(bin_label) {
+        nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
+        mean(nums)
+      })
+    ) %>%
+    left_join(species_totals, by = "species") %>%
+    mutate(percentage = count / total_pixels) %>%
+    filter(percentage >= 0.001) %>%
+    select(species, PSI_bin, bin_median, avg_value, count, total_pixels, percentage)
+  
+  return(meanNDVI_PSIbin_species)
 }
 
-save_pairs(p_pairs, pairs_ggally)
-
-# B) Correlation heatmap (Pearson)
-corr_long <- as.data.frame(as.table(corr_pearson))
-names(corr_long) <- c("Var1", "Var2", "corr")
-
-p_heat <- ggplot(corr_long, aes(Var1, Var2, fill = corr)) +
-  geom_tile() +
-  geom_text(aes(label = sprintf("%.2f", corr)), size = 4) +
-  scale_fill_gradient2(limits = c(-1, 1), midpoint = 0) +
-  coord_fixed() +
-  labs(title = "",
-       x = NULL, y = NULL, fill = "Pearson r") +
-  theme_minimal(base_size = 12) +
-  theme(
-    plot.background   = element_rect(fill = "white", color = "white"),
-    panel.background  = element_rect(fill = "white"),
-    legend.background = element_rect(fill = "white", color = "white"),
-    plot.title        = element_text(hjust = 0.5, size = 18, face = "bold"),
-    plot.subtitle     = element_text(hjust = 0.5, size = 14),
-    axis.title        = element_text(face = "bold", size = 14),
-    axis.text.y       = element_text(color = "black", size = 12),
-    axis.text.x       = element_blank(),
-    panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.5),
-    panel.grid.major  = element_blank(),
-    panel.grid.minor  = element_blank(),
-    legend.position   = "top",
-    legend.text       = element_text(size = 12),
-    strip.background  = element_rect(fill = "white", color = "black", linewidth = 0.5),
-    strip.text        = element_text(face = "bold", size = 12)
-  )
-
-ggsave(heat_path, p_heat, width = 6, height = 5, dpi = 300)
-message("Saved heatmap: ", normalizePath(heat_path))
-
-# C) Selected pairwise scatter plots with LM line + r label
-plot_pair <- function(df, xvar, yvar) {
-  r <- suppressWarnings(cor(df[[xvar]], df[[yvar]], use = "complete.obs"))
-  ggplot(df, aes(x = .data[[xvar]], y = .data[[yvar]])) +
-    geom_point(alpha = 0.4, size = 0.8) +
-    geom_smooth(method = "lm", se = FALSE) +
-    annotate("text",
-             x = min(df[[xvar]], na.rm = TRUE),
-             y = max(df[[yvar]], na.rm = TRUE),
-             label = paste0("r = ", round(r, 2)),
-             hjust = 0, vjust = 1, size = 5, fontface = "bold") +
-    labs(x = xvar, y = yvar) +
-    theme_minimal(base_size = 12) +
-    theme(panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5))
+NDVI_TDiffbin <- function(df, bin_width = 3) {
+  
+  # Identify the correct column (Quantiles or Proportions)
+  value_col <- if ("Quantiles" %in% names(df)) "Quantiles" else "Proportions"
+  
+  # Compute total pixels per species
+  species_totals <- df %>%
+    group_by(species) %>%
+    summarise(total_pixels = n(), .groups = "drop")
+  
+  # Define bin breaks for transpiration_deficit
+  tdiff_min <- floor(min(df$transpiration_deficit, na.rm = TRUE))
+  tdiff_max <- ceiling(max(df$transpiration_deficit, na.rm = TRUE))
+  bin_breaks <- seq(tdiff_min, tdiff_max, by = bin_width)
+  
+  library(dplyr); library(tibble)
+  
+  df <- as_tibble(df)
+  # Create TDiff_bin column
+  df <- df %>%
+    mutate(TDiff_bin = cut(transpiration_deficit,
+                           breaks = bin_breaks,
+                           include.lowest = TRUE,
+                           right = FALSE))
+  
+  # Helper function to compute bin median
+  get_bin_median <- function(bin_label) {
+    nums <- as.numeric(strsplit(gsub("\\[|\\]|\\(|\\)", "", bin_label), ",")[[1]])
+    mean(nums)
+  }
+  
+  # Group, summarize, calculate percentage, and filter
+  meanNDVI_TDiffbin_species <- df %>%
+    group_by(species, TDiff_bin) %>%
+    summarise(
+      avg_value = mean(.data[[value_col]], na.rm = TRUE),
+      count = n(),
+      .groups = 'drop'
+    ) %>%
+    mutate(bin_median = sapply(as.character(TDiff_bin), get_bin_median)) %>%
+    left_join(species_totals, by = "species") %>%
+    mutate(percentage = count / total_pixels) %>%
+    filter(percentage >= 0.0001) %>%
+    select(species, TDiff_bin, bin_median, avg_value, count, total_pixels, percentage)
+  
+  return(meanNDVI_TDiffbin_species)
 }
 
-pairs_to_plot <- list(
-  c("Oak", "Beech"),
-  c("Oak", "Spruce"),
-  c("Oak", "Pine"),
-  c("Beech", "Spruce"),
-  c("Beech", "Pine"),
-  c("Spruce", "Pine")
-)
+NDVI_PSIbin_df <- NDVI_PSIbin(data)
 
-plots <- lapply(pairs_to_plot, function(p) plot_pair(num_df, p[1], p[2]))
-combined <- (plots[[1]] | plots[[2]] | plots[[3]]) /
-  (plots[[4]] | plots[[5]] | plots[[6]])
-
-print(combined)
-pairs_custom <- file.path(figures_dir, "PSI_pairs.png")
-ggsave(pairs_custom, combined, width = 12, height = 8, dpi = 300)
-message("Saved custom pairs plot: ", normalizePath(pairs_custom))
-
-# -------------------------------- Notes ---------------------------------------
-# • “Same pixel” is guaranteed by sampling from a mask where all species are non-NA.
-# • Switch to method = "regular" in spatSample() for a spatially even sample.
-# • Increase/decrease n_samp by changing the 1000L cap.
-# • If rasters are on different grids, align before this (project/crop/resample).
-
-list.files(figures_dir, pattern = "PSI", full.names = TRUE)
+NDVI_TDiffbin_df <- NDVI_TDiffbin(data)
