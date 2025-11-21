@@ -66,109 +66,8 @@ for (file in asc_files) {
   }
 }
 
-library(terra)
-
-# temperature
-Beech.NDVI.2003.mask <- rast("results/Beech/NDVI_mask/NDVI_2003_mask.tif")
-Beech.temp.2003.07 <- rast("../DWD_temp/grids_germany_monthly_air_temp_mean_200307.asc")
-Beech.temp.2003.08 <- rast("../DWD_temp/grids_germany_monthly_air_temp_mean_200308.asc")
-Beech.temp.2003 <- c(Beech.temp.2003.07, Beech.temp.2003.08)
-Beech.temp.2003 <- app(Beech.temp.2003, mean)
-Beech.temp.2003 <- Beech.temp.2003/10
-crs(Beech.temp.2003) <- "epsg:31467"
-Beech.temp.2003 <- project(Beech.temp.2003, Beech.NDVI.2003.mask)
-Beech.temp.2003 <- mask(Beech.temp.2003, Beech.NDVI.2003.mask)
-names(Beech.temp.2003) <- c("Beech.temp.2003")
-
-es.func <- function(tmean)
-{
-  es <- 6.11 * exp((2.5e6 / 461) * (1 / 273 - 1 / (273 + tmean)))
-  return(es)
-}
-
-Beech.es.2003 <- app(Beech.temp.2003, es.func)
-
-hy <- rast("../E_OBS_HU/hu_ens_mean_0.1deg_reg_v31.0e.nc")
-all_dates <- time(hy)
-all_dates <- as.Date(all_dates)
-target_dates <- as.Date(c("2003-07-28", "2003-08-29"))
-layer_indices <- which(all_dates %in% target_dates)
-hy.2003 <- hy[[layer_indices]]
-Beech.hy.2003 <- app(hy.2003, mean)
-Beech.hy.2003 <- project(Beech.hy.2003, Beech.NDVI.2003.mask)
-Beech.hy.2003 <- mask(Beech.hy.2003, Beech.NDVI.2003.mask)
-
-Beech.es.hy.2003 <- c(Beech.es.2003, Beech.hy.2003)
-
-# VPD
-vpd.func <- function(es.hy){
-  ## calculate saturation vapor pressure
-  es <- es.hy[1]
-  hy <- es.hy[2]
-  ## calculate vapor pressure deficit
-  vpd <- ((100 - hy) / 100) * es
-  return(vpd)
-}
-
-Beech.vpd.2003 <- app(Beech.es.hy.2003, vpd.func)
-names(Beech.vpd.2003) <- c("Beech.vpd.2003")
-Beech.vpd.2003 <- Beech.vpd.2003/10 # unit: kPa
-
-Beech.temp.vpd.2003 <- c(Beech.temp.2003, Beech.vpd.2003)
-Beech.temp.vpd.2003.df <- as.data.frame(Beech.temp.vpd.2003, xy = T)
-Beech.temp.vpd.2003.df <- na.omit(Beech.temp.vpd.2003.df)
-names(Beech.temp.vpd.2003.df) <- c("x", "y", "temp", "vpd")
-Beech.temp.vpd.2003.df$year <- 2003
-Beech.temp.vpd.2003.df$species <- "Beech"
-
-
-library(ggplot2)
-library(sf)
-library(rnaturalearth)
-library(rnaturalearthdata)
-library(dplyr)
-
-boundary_germany <- ne_countries(scale = "medium", 
-                                 country = "Germany", 
-                                 returnclass = "sf")
-
-ggplot() +
-  # VPD points
-  geom_point(data = Beech.temp.vpd.2003.df,
-             aes(x = x, y = y, color = vpd),
-             size = 0.5) +
-  # Germany boundary
-  geom_sf(data = boundary_germany,
-          fill = NA,
-          color = "black",
-          inherit.aes = FALSE) +
-  # switch to coord_sf
-  coord_sf() +
-  scale_color_gradientn(
-    colours = c("blue", "dodgerblue", "yellow", "orange", "red"),
-    name    = "VPD (kPa)"
-  ) +
-  theme(
-    axis.text.x       = element_text(angle = 0, hjust = 0.5),
-    plot.background   = element_rect(fill = "white", color = "white"),
-    panel.background  = element_rect(fill = "white"),
-    legend.background = element_rect(fill = "white", color = "white"),
-    plot.title        = element_text(hjust = 0.5, size = 18, face = "bold"),
-    plot.subtitle     = element_text(hjust = 0.5, size = 14),
-    axis.title        = element_text(face = "bold", size = 16),
-    axis.text         = element_text(color = "black", size = 14),
-    panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.5),
-    panel.grid.major  = element_blank(),
-    panel.grid.minor  = element_blank(),
-    legend.position   = "top",
-    legend.text       = element_text(size = 14),
-    strip.background  = element_rect(fill = "white", color = "black", linewidth = 0.5),
-    strip.text        = element_text(face = "bold", size = 12)
-  )
-
-
 #–––––––––––––––––––––––––––––––––––––––––
-# Compute & Plot Mean Temp & VPD (2003–2024)
+# Compute & Plot Mean Temp & VPD (2003–2022)
 #–––––––––––––––––––––––––––––––––––––––––
 
 # 1) Libraries
@@ -192,7 +91,7 @@ vpd.func <- function(es.hy) {
 
 # 3) Parameters
 species_list <- c("Oak","Beech","Spruce","Pine")    # desired order
-years <- 2003:2024
+years <- 2003:2022
 hu_file      <- "../E_OBS_HU/hu_ens_mean_0.1deg_reg_v31.0e.nc"
 
 # 4) Containers for each species
@@ -256,7 +155,7 @@ df_list <- lapply(species_list, function(sp) {
 all_df <- bind_rows(df_list) %>%
   mutate(species = factor(species, levels=species_list))
 
-save(all_df, file = "results/Data/mean_Temp_VPD.RData")
+save(all_df, file = "results/Data/mean_Temp_VPD_2003_2022.RData")
 
 # 7) Germany boundary
 boundary_germany <- ne_countries(scale="medium",

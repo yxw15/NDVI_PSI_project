@@ -288,7 +288,7 @@ cross_species_correlations <- function(var, sample_cap = 10000L, seed = 1234) {
 }
 
 # ------------------------------- Run Pipeline ---------------------------------
-years <- 2018
+years <- c(2005, 2022)
 monthdays <- c("07-28", "08-29")
 
 for (yr in years) {

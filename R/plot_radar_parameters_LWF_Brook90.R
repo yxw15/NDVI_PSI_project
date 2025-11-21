@@ -1,5 +1,8 @@
 setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
 
+# install.packages("devtools") # if you don’t have devtools yet
+devtools::install_github("ricardo-bion/ggradar", dependencies = TRUE)
+
 # ---- Packages ----
 library(dplyr)
 library(tidyr)
@@ -15,12 +18,20 @@ cb_palette <- c(
 )
 
 # ---- Parameters table (includes mean_vpd) ----
+# params_tbl <- tibble::tribble(
+#   ~species, ~LAI, ~gmax,  ~G,      ~Psi_CR, ~root_depth, ~beta_root, ~mean_vpd,
+#   "Oak",     4.5, 0.0055, 0.02475, -2.5,    -1.8,        0.976,      0.605,
+#   "Beech",   6.0, 0.0042, 0.02520, -2.0,    -1.4,        0.976,      0.512,
+#   "Spruce",  5.5, 0.0035, 0.01925, -2.0,    -1.2,        0.966,      0.455,
+#   "Pine",    3.5, 0.0055, 0.01925, -2.5,    -1.8,        0.966,      0.600
+# )
+
 params_tbl <- tibble::tribble(
-  ~species, ~LAI, ~gmax,  ~G,      ~Psi_CR, ~root_depth, ~beta_root, ~mean_vpd,
-  "Oak",     4.5, 0.0055, 0.02475, -2.5,    -1.8,        0.976,      0.605,
-  "Beech",   6.0, 0.0042, 0.02520, -2.0,    -1.4,        0.976,      0.512,
-  "Spruce",  5.5, 0.0035, 0.01925, -2.0,    -1.2,        0.966,      0.455,
-  "Pine",    3.5, 0.0055, 0.01925, -2.5,    -1.8,        0.966,      0.600
+  ~species, ~LAI, ~gmax,  ~G,      ~Psi_CR, ~root_depth, ~beta_root,
+  "Oak",     4.5, 0.0055, 0.02475, -2.5,    -1.8,        0.976,   
+  "Beech",   6.0, 0.0042, 0.02520, -2.0,    -1.4,        0.976,   
+  "Spruce",  5.5, 0.0035, 0.01925, -2.0,    -1.2,        0.966, 
+  "Pine",    3.5, 0.0055, 0.01925, -2.5,    -1.8,        0.966
 )
 
 # ---- Prepare magnitudes for signed variables ----
@@ -29,7 +40,8 @@ params_aug <- params_tbl %>%
     Psi_CR_abs   = abs(Psi_CR),
     root_depth_m = abs(root_depth)
   ) %>%
-  select(species, LAI, gmax, G, Psi_CR_abs, root_depth_m, beta_root, mean_vpd)
+  select(species, LAI, gmax, G, Psi_CR_abs, root_depth_m, beta_root)
+  # select(species, LAI, gmax, G, Psi_CR_abs, root_depth_m, beta_root, mean_vpd)
 
 # ---- Min–max scale to 0–1 across species (per variable) ----
 range01 <- function(x) {
@@ -46,14 +58,24 @@ radar_df <- params_scaled %>%
 
 # ---- 1) Give ggradar simple (character) labels to avoid expression->data.frame error ----
 # (Order must match columns after 'group')
+# axis_labels_plain <- c(
+#   "LAI",
+#   "g[max]",
+#   "G",
+#   "|Psi[CR]|",
+#   "|root[depth]|",
+#   "beta[root]",
+#   "bar(VPD)"
+# )
+
 axis_labels_plain <- c(
   "LAI",
   "g[max]",
   "G",
   "|Psi[CR]|",
   "|root[depth]|",
-  "beta[root]",
-  "bar(VPD)"
+  "beta[root]"
+#   "bar(VPD)"
 )
 
 # ---- Radar base (hide built-in labels so we can add parsed ones) ----
@@ -63,9 +85,9 @@ radar_base <- ggradar(
   group.colours = cb_palette,
   grid.min = 0, grid.mid = 0.5, grid.max = 1,
   background.circle.colour = "white",
-  gridline.mid.colour = "grey80",
-  gridline.min.colour = "grey90",
-  gridline.max.colour = "grey90",
+  gridline.min.colour = "grey80",
+  gridline.mid.colour = "grey70",
+  gridline.max.colour = "grey60",
   axis.label.size = 0,              # hide the default labels
   group.line.width = 1.2,
   group.point.size = 3
@@ -76,7 +98,7 @@ radar_base <- ggradar(
 n_vars <- ncol(radar_df) - 1
 angles <- seq(0, 2*pi, length.out = n_vars + 1)[- (n_vars + 1)]
 
-r_label <- 1.35   # increase to move labels further away (try 1.35–1.5)
+r_label <- 1.3   # increase to move labels further away (try 1.35–1.5)
 
 axis_df <- data.frame(
   x = r_label * sin(angles),
@@ -84,11 +106,11 @@ axis_df <- data.frame(
   lab <- c(
     "LAI",
     "italic(g)[max]",
-    "G",
+    "italic(G)[max]",
     '"|"*italic(Psi)*phantom(0)[CR]*"|"',   # |Ψ_CR| with extra space
     '"|"*root~depth*"|"',                   # |root depth|
-    "italic(beta)*phantom(0)[root]",        # β_root with extra space
-    "bar(VPD)"
+    "italic(beta)*phantom(0)[root]"        # β_root with extra space
+#     "bar(VPD)"
   )
 )
 
