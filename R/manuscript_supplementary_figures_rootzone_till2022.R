@@ -2204,6 +2204,13 @@ plot_TDiff_PSIbin_slope <- function(data,
                  aic_plot = p_aic))
 }
 
+plot_TDiff_PSIbin_slope(
+  data = data,
+  coef_output = "results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_coeff_till2022.png",
+  figure_output = "results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_slope_till2022.png",
+  aic_barplot_fig = "results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_AIC_till2022.png")
+
+
 plot_TDiff_PSIbin_onlyA <- function(data, figure_output) {
   
   # -------------------------
@@ -2212,13 +2219,16 @@ plot_TDiff_PSIbin_onlyA <- function(data, figure_output) {
   library(dplyr)
   library(tidyr)
   library(ggplot2)
+  library(patchwork)
+  library(tibble)
+  library(purrr)
   library(scales)
   
   # Prepare data
   df <- TDiff_PSIbin(data)
   df <- na.omit(df)
   
-  # Species & palette (same as full function)
+  # Species & palette
   cb_palette <- c("Oak"   = "#E69F00",
                   "Beech" = "#0072B2",
                   "Spruce"= "#009E73",
@@ -2226,19 +2236,48 @@ plot_TDiff_PSIbin_onlyA <- function(data, figure_output) {
   species_levels <- c("Oak", "Beech", "Spruce", "Pine")
   df$species <- factor(df$species, levels = species_levels)
   
-  # shorthand
   xcol <- "bin_median"
   ycol <- "avg_transpiration_deficit"
   
   # -------------------------
-  # Reference median line
+  # Fit models & choose best degree by AIC
   # -------------------------
-  line_median <- median(df[[ycol]], na.rm = TRUE)
+  degrees <- c(1, 2, 3)
+  fit_one_species <- function(sp) {
+    sdf <- df %>% filter(species == sp) %>% select(all_of(c(xcol, ycol)))
+    if (nrow(sdf) < 5) {
+      return(list(species = sp, best_deg = NA, best_fit = NULL))
+    }
+    fits <- lapply(degrees, function(d) {
+      fm <- reformulate(termlabels = paste0("poly(", xcol, ", ", d, ")"), response = ycol)
+      tryCatch(lm(fm, data = sdf), error = function(e) NULL)
+    })
+    aics <- sapply(fits, function(m) if (is.null(m)) Inf else AIC(m))
+    best_idx <- which.min(aics)
+    list(species = sp, best_deg = degrees[best_idx], best_fit = fits[[best_idx]])
+  }
+  fits_all <- lapply(species_levels, fit_one_species)
   
-  # -------------------------
-  # Panel (a) only
-  # -------------------------
-  plot_a <- ggplot() +
+  # ---------------------------------
+  # Predictions
+  # ---------------------------------
+  pred_list <- lapply(fits_all, function(ff) {
+    if (is.null(ff$best_fit)) return(NULL)
+    sp <- ff$species
+    sp_df <- df %>% filter(species == sp)
+    xr <- range(sp_df[[xcol]], na.rm = TRUE)
+    xseq <- seq(xr[1], xr[2], length.out = 200)
+    nd <- data.frame(bin_median = xseq)
+    nd$species <- factor(sp, levels = species_levels)
+    nd$predicted <- predict(ff$best_fit, newdata = nd)
+    nd
+  })
+  pred_df <- bind_rows(pred_list)
+  
+  # -------------
+  # Final plot: ONLY points + fitted lines
+  # -------------
+  plot_clean <- ggplot() +
     geom_point(data = df,
                aes(x = .data[[xcol]],
                    y = .data[[ycol]],
@@ -2246,62 +2285,45 @@ plot_TDiff_PSIbin_onlyA <- function(data, figure_output) {
                    shape = species,
                    size = percentage),
                alpha = 0.7) +
-    geom_hline(yintercept = line_median,
-               linetype = "dashed", color = "black", linewidth = 1) +
-    annotate("text",
-             x = -2000,
-             y = line_median,
-             label = "median",
-             vjust = -0.3, fontface = "italic", size = 6) +
+    geom_line(data = pred_df,
+              aes(x = bin_median, y = predicted, color = species),
+              linewidth = 1) +
     scale_color_manual(values = cb_palette, name = "") +
     scale_shape_manual(values = c("Oak" = 16, "Beech" = 17, "Spruce" = 15, "Pine" = 18),
                        guide = "none") +
-    scale_size_continuous(
-      name = "Pixels per bin (%)",
-      range = c(1, 8),
-      labels = percent_format(accuracy = 1)
-    ) +
+    scale_size_continuous(name = "",
+                          range = c(1, 8),
+                          labels = percent_format(accuracy = 1)) +
     guides(
       color = guide_legend(order = 1),
       size  = guide_legend(order = 2)
     ) +
     labs(x = "soil water potential (kPa)",
          y = "transpiration deficit") +
-    ggtitle("(a)") +
     theme_minimal() +
     theme(
-      plot.title.position = "plot",
-      plot.title          = element_text(face = "bold", size = 18,
-                                         hjust = 0.1, vjust = 1),
-      axis.text.x         = element_text(angle = 0, hjust = 0.5),
-      axis.title          = element_text(face = "bold", size = 16),
-      axis.text           = element_text(color = "black", size = 14),
-      legend.position     = "bottom",
-      legend.text         = element_text(size = 14),
-      legend.title        = element_text(size = 14, face = "bold"),
-      panel.background    = element_rect(fill = "white"),
-      plot.background     = element_rect(fill = "white", color = "white"),
-      panel.grid          = element_blank(),
-      panel.border        = element_blank()
+      plot.title = element_blank(),        # remove title "(a)"
+      axis.text.x = element_text(size = 14),
+      axis.text.y = element_text(size = 14),
+      axis.title  = element_text(size = 16, face = "bold"),
+      legend.position = "bottom",
+      legend.text = element_text(size = 14),
+      legend.title = element_text(size = 14, face = "bold"),
+      panel.background = element_rect(fill = "white"),
+      plot.background  = element_rect(fill = "white", color = "white"),
+      panel.grid       = element_blank()
     )
   
-  print(plot_a)
+  print(plot_clean)
   
-  # save
   if (!missing(figure_output)) {
-    ggsave(figure_output,
-           plot = plot_a, width = 8, height = 6, dpi = 300)
+    ggsave(figure_output, plot = plot_clean, width = 8, height = 6, dpi = 300)
   }
   
-  invisible(plot_a)
+  invisible(plot_clean)
 }
 
-
-plot_TDiff_PSIbin_slope(
-  data = data,
-  coef_output = "results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_coeff_till2022.png",
-  figure_output = "results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_slope_till2022.png",
-  aic_barplot_fig = "results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_AIC_till2022.png")
+plot_TDiff_PSIbin_onlyA(data, "results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_onlyA_till2022.png")
 
 ### S7 soil texture composition ###
 source("R/plot_soil_map_MODIS.R")

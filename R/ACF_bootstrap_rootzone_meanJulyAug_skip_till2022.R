@@ -256,10 +256,10 @@ message("🚀 Beginning full workflow!")
 #                   mean_transpiration_deficit  = "TDiff",
 #                   mean_Quantiles              = "Q")
 
-species_list <- c("Beech")
-parameters   <- c("mean_Quantiles")
-var_names    <- c(mean_Quantiles              = "Q")
-
+species_list <- c("Spruce")
+parameters   <- c("mean_soil_water_potential","mean_Quantiles")
+var_names    <- c(mean_soil_water_potential = "PSI",
+                  mean_Quantiles            = "Q")
 
 fig_dir <- file.path("results_rootzone/Figures_till2022/acf")
 if (!dir.exists(fig_dir)) dir.create(fig_dir, recursive = TRUE)
