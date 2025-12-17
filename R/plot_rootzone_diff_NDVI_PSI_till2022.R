@@ -149,45 +149,62 @@ plot_df_clean <- plot_df %>%
 
 # AIC-based selection between linear and exponential; force exponential for Spruce|Spruce
 # AIC-only model selection (no forcing)
-fit_curves <- function(df) {
+fit_curves <- function(df, key) {
   vals <- df$bin_median[is.finite(df$bin_median)]
   if (length(vals) < 2) {
     return(tibble(bin_median = numeric(0), fit = numeric(0), model = character(0)))
   }
   
-  # Linear (always available & used as fallback)
+  # Get NDVI/PSI species from group keys (correct!)
+  spp_NDVI <- key$NDVI_species
+  spp_PSI  <- key$PSI_species
+  
+  cat("\n==============================\n")
+  print(paste("FITTING for:", spp_NDVI, "|", spp_PSI))
+  
+  # Linear
   lm_fit <- lm(avg_NDVI ~ bin_median, data = df)
   aic_lm <- AIC(lm_fit)
+  print(paste("Linear AIC:", aic_lm))
   
-  # Exponential (try)
+  # Exponential
   start_list <- list(a = 5, b = 3, c = 0.001)
-  ctrl       <- nls.control(maxiter = 1200, minFactor = 1e-9)
+  ctrl <- nls.control(maxiter = 1200, minFactor = 1e-9)
+  
   nls_fit <- tryCatch(
     nls(avg_NDVI ~ a + b * exp(c * bin_median),
         data = df, start = start_list, control = ctrl),
     error = function(e) NULL
   )
-  aic_exp <- if (!is.null(nls_fit)) AIC(nls_fit) else Inf
   
-  # Choose the lower AIC (if nls converged)
-  use_exp <- !is.null(nls_fit) && is.finite(aic_exp) && (aic_exp < aic_lm)
+  if (!is.null(nls_fit)) {
+    aic_exp <- AIC(nls_fit)
+    print(paste("Exponential AIC:", aic_exp))
+    print(summary(nls_fit)$coefficients)
+  } else {
+    aic_exp <- Inf
+    print("Exponential model FAILED to converge.")
+  }
+  
+  cat("Model chosen:", ifelse(aic_exp < aic_lm, "exponential", "linear"), "\n")
   
   grid <- tibble(bin_median = seq(min(vals), max(vals), length.out = 100))
-  if (use_exp) {
-    grid$fit   <- predict(nls_fit, newdata = grid)
+  if (!is.null(nls_fit) && is.finite(aic_exp) && (aic_exp < aic_lm)) {
+    grid$fit <- predict(nls_fit, newdata = grid)
     grid$model <- "exponential"
   } else {
-    grid$fit   <- predict(lm_fit, newdata = grid)
+    grid$fit <- predict(lm_fit, newdata = grid)
     grid$model <- "linear"
   }
+  
   grid
 }
 
 # Compute fitted curves (grouped by NDVI & PSI species)
 fitted_df <- plot_df_clean %>%
-  dplyr::group_by(NDVI_species, PSI_species) %>%
-  dplyr::group_modify(~ fit_curves(.x)) %>%
-  dplyr::ungroup()
+  group_by(NDVI_species, PSI_species) %>%
+  group_modify(~ fit_curves(.x, .y)) %>%
+  ungroup()
 
 # Save fitted-data for reference
 write.csv(

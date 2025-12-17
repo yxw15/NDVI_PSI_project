@@ -2325,6 +2325,152 @@ plot_TDiff_PSIbin_onlyA <- function(data, figure_output) {
 
 plot_TDiff_PSIbin_onlyA(data, "results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_onlyA_till2022.png")
 
+plot_TDiff_PSIbin_clean <- function(data, coef_output, figure_output) {
+  
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(purrr)
+  library(tibble)
+  
+  df <- TDiff_PSIbin(data)
+  df <- na.omit(df)
+  
+  cb_palette <- c("Oak"="#E69F00","Beech"="#0072B2","Spruce"="#009E73","Pine"="#F0E442")
+  species_levels <- c("Oak","Beech","Spruce","Pine")
+  df$species <- factor(df$species, levels=species_levels)
+  
+  xcol <- "bin_median"
+  ycol <- "avg_transpiration_deficit"
+  
+  degrees <- c(1)
+  
+  fit_one_species <- function(sp) {
+    sdf <- df %>% filter(species==sp) %>% select(all_of(c(xcol,ycol)))
+    if(nrow(sdf)<5) return(list(species=sp, best_deg=NA, best_fit=NULL))
+    
+    fits <- lapply(degrees, function(d){
+      fm <- reformulate(paste0("poly(",xcol,",",d,")"), ycol)
+      tryCatch(lm(fm, data=sdf), error=function(e) NULL)
+    })
+    aics <- sapply(fits, function(m) if(is.null(m)) NA else AIC(m))
+    best_idx <- which.min(aics)
+    
+    list(
+      species = sp,
+      best_deg = degrees[best_idx],
+      best_fit = fits[[best_idx]],
+      AIC_values = aics,
+      best_AIC = aics[best_idx]
+    )
+  }
+  
+  fits_all <- lapply(species_levels, fit_one_species)
+  
+  # Print AIC summary
+  aic_table <- lapply(fits_all, function(ff){
+    tibble(
+      species = ff$species,
+      degree = ff$best_deg,
+      best_AIC = ff$best_AIC
+    )
+  }) %>% bind_rows()
+  
+  print(aic_table)
+  
+  # Predictions -----------------------------------------------------
+  pred_list <- lapply(fits_all, function(ff){
+    if(is.null(ff$best_fit)) return(NULL)
+    sp <- ff$species
+    sp_df <- df %>% filter(species==sp)
+    xr <- range(sp_df[[xcol]], na.rm=TRUE)
+    xseq <- seq(xr[1], xr[2], length.out=200)
+    nd <- data.frame(bin_median=xseq)
+    nd$species <- sp
+    nd$predicted <- predict(ff$best_fit, newdata=nd)
+    nd
+  })
+  pred_df <- bind_rows(pred_list)
+  
+  # Panel (a) ONLY --------------------------------------------------
+  plot_mixed <- ggplot() +
+    geom_point(data=df,
+               aes(x=.data[[xcol]], y=.data[[ycol]],
+                   color=species, shape=species, size=percentage),
+               alpha=0.7) +
+    geom_line(data=pred_df,
+              aes(x=bin_median, y=predicted, color=species),
+              linewidth=1) +
+    scale_color_manual(values=cb_palette) +
+    scale_shape_manual(values=c("Oak"=16,"Beech"=17,"Spruce"=15,"Pine"=18),
+                       guide="none") +
+    scale_size_continuous(name="Pixels per bin (%)",
+                          range=c(1,8)) +
+    guides(color=guide_legend(order=1),
+           size=guide_legend(order=2)) +
+    labs(x="soil water potential (kPa)",
+         y="transpiration deficit",
+         title="(a)") +
+    theme_minimal(base_size=15)
+  
+  print(plot_mixed)
+  ggsave(figure_output, plot=plot_mixed, width=8, height=6, dpi=300)
+  
+  # Coefficients ----------------------------------------------------
+  coef_rows <- lapply(fits_all, function(ff){
+    if(is.null(ff$best_fit)) return(NULL)
+    sp <- ff$species
+    deg <- ff$best_deg
+    sm <- summary(ff$best_fit)$coefficients
+    out <- as.data.frame(sm)
+    out$term_raw <- rownames(out)
+    out$species <- sp
+    out$degree <- deg
+    out
+  }) %>% bind_rows()
+  
+  coef_data <- coef_rows %>%
+    mutate(
+      term = case_when(
+        term_raw=="(Intercept)" ~ "a",
+        grepl("poly\\(bin_median, *1\\)1", term_raw) ~ "b",
+        grepl("poly\\(bin_median, *2\\)1", term_raw) ~ "b",
+        grepl("poly\\(bin_median, *2\\)2", term_raw) ~ "c",
+        grepl("poly\\(bin_median, *3\\)1", term_raw) ~ "b",
+        grepl("poly\\(bin_median, *3\\)2", term_raw) ~ "c",
+        grepl("poly\\(bin_median, *3\\)3", term_raw) ~ "d",
+        TRUE ~ "other"
+      ),
+      species = factor(species, levels=species_levels),
+      value = Estimate,
+      p_value = `Pr(>|t|)`,
+      label = ifelse(p_value < 0.05, "*", sprintf("%.2f", p_value))
+    ) %>%
+    filter(term %in% c("a","b","c","d")) %>%
+    group_by(species, term) %>%
+    slice(1) %>% ungroup() %>%  # keep only needed terms
+    mutate(term=factor(term, levels=c("a","b","c","d")))
+  
+  plot_coef <- ggplot(coef_data,
+                      aes(x=species, y=value, fill=species)) +
+    geom_bar(stat="identity", width=0.7) +
+    geom_text(aes(label=label, y=value/2),
+              color="black", size=5) +
+    facet_wrap(~term, scales="free_y") +
+    scale_fill_manual(values=cb_palette, guide="none") +
+    labs(title="Model coefficients", y="Coefficient value", x="") +
+    theme_minimal(base_size=15)
+  
+  print(coef_data)
+  print(plot_coef)
+  ggsave(coef_output, plot=plot_coef, width=10, height=7, dpi=300)
+  
+  invisible(list(panel_a=plot_mixed, coef_plot=plot_coef))
+}
+plot_TDiff_PSIbin_clean(data, 
+                        "results_rootzone/test/TDiff_PSIbin_coeff_till2022.png",
+                        "results_rootzone/test/TDiff_PSIbin_slope_till2022.png")
+
 ### S7 soil texture composition ###
 source("R/plot_soil_map_MODIS.R")
 

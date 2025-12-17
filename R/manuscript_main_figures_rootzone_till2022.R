@@ -406,11 +406,13 @@ plot_NDVI_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output
   library(nlme)    # for consistency (even though lm is used for linear)
   library(car)     # for deltaMethod
   library(broom)
+  library(latex2exp)
   
   # Define the value column and species groups.
   # Use linear regression for Oak and Beech,
   # and the exponential model for Spruce and Pine.
   value_col <- "avg_value"
+  # linear_species <- c("Beech","Oak", "Spruce", "Pine")
   linear_species <- c("Beech")
   exp_species <- c("Oak", "Spruce", "Pine")
   species_all <- cbind(linear_species, exp_species)
@@ -604,6 +606,8 @@ plot_NDVI_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output
     labs(caption = "(a)") +
     theme(plot.caption = element_text(face = "bold", size = 16, hjust = 0.5))
   
+  print(lin_coef_df)
+  
   ##############################################
   # Coefficient Extraction and Plotting - Exponential
   ##############################################
@@ -665,6 +669,8 @@ plot_NDVI_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output
     ) +
     labs(caption = "(b)") +
     theme(plot.caption = element_text(face = "bold", size = 14, hjust = 0.5))
+  
+  print(exp_coef_df)
   
   # Combine the coefficient plots into one figure with panel labels (a) and (b)
   # Adjusted spacing between facets for better readability
@@ -803,7 +809,7 @@ plot_NDVI_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output
   p_x50 <- ggplot(stats_all, aes(x = species, y = x50, fill = species)) +
     geom_bar(stat = "identity", width = 0.7) +
     scale_fill_manual(values = cb_palette, guide = "none") +
-    labs(x = "", y = "soil water potential (kPa)") +
+    labs(x ="", y = TeX("$\\Psi_{\\,\\, Q_{50}}$(kPa)")) +
     ggtitle("(b)") +
     theme_minimal() +
     theme(
@@ -838,7 +844,7 @@ plot_NDVI_PSI_exp_linear_slope_coeff <- function(data, combined_coef_fig, output
                   y = abs_slope/2),
               color = "black", size = 5) +
     scale_fill_manual(values = cb_palette, guide = "none") +
-    labs(x = "", y = "absolute slope") +
+    labs(x ="", y = TeX("$|\\lambda\\, Q_{50}(\\Psi_{\\, \\, soil})|$")) +
     ggtitle("(c)") +
     theme_minimal() +
     theme(
@@ -896,7 +902,7 @@ plot_NDVI_PSI_exp_linear_slope_coeff(data,
                                      "results_rootzone/Figures_till2022/supplementary/NDVI_Q_PSIbin_exp_linear_coeff_till2022.png",
                                      "results_rootzone/Figures_till2022/main/NDVI_Q_PSIbin_exp_linear_slope_till2022.png",
                                      "results_rootzone/Figures_till2022/supplementary/NDVI_Q_PSIbin_exp_linear_aic_till2022.png")
-### Figure 2 - NDVI - TDiff ###
+### Figure 3 - NDVI - TDiff ###
 NDVI_TDiffbin <- function(df, bin_width = 3) {
   
   # Identify the correct column (Quantiles or Proportions)
@@ -1046,6 +1052,7 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
       strip.text = element_text(face = "bold", size = 12)
     )
   print(p_aic)
+  print(aic_long)
   ggsave(filename = aic_barplot_fig, plot = p_aic, width = 8, height = 6, dpi = 300)
   
   ##########################
@@ -1103,7 +1110,7 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
         strip.text = element_text(face = "bold", size = 12)
       )
   }
-  
+  print(lin_coef_df)
   # Exponential coefficients (same as your original styling)
   exp_coef_df <- NULL
   if (length(chosen_exp) > 0) {
@@ -1154,6 +1161,8 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
       )
   }
   
+  print(exp_coef_df)
+  
   # Combine coefficient panels (keep your themes)
   combined_coeff <- if (!is.null(p_coeff_linear) && !is.null(p_coeff_exp)) {
     p_coeff_linear + p_coeff_exp
@@ -1200,7 +1209,7 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
     geom_hline(yintercept = threshold, linetype = "dashed", linewidth = 1) +
     annotate("text", x = 32, y = threshold,
              label = "median", fontface = "italic",
-             hjust = 0.1, vjust = -0.3, size = 5) +
+             hjust = 0.1, vjust = -0.3, size = 6) +
     scale_color_manual(values = cb_palette) +
     scale_shape_manual(values = c("Oak"=16,"Beech"=17,"Spruce"=15,"Pine"=18)) +
     scale_size_continuous(name = "Pixels per bin (%)",
@@ -1269,7 +1278,8 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
   # Panel B: x50 (theme unchanged)
   p_x50 <- ggplot(stats_all, aes(x=species, y=x50, fill=species)) +
     geom_col(width=0.7) + scale_fill_manual(values=cb_palette, guide=FALSE) +
-    labs(y="transpiration deficit (mm)", x="") + ggtitle("(b)") +
+    labs(y = TeX("$T_{Q_{50}}$(mm)"), x = "") +
+    ggtitle("(b)") +
     theme_minimal() +
     theme(
       plot.title        = element_text(hjust = 0, vjust = 1, size = 16, face = "bold"),
@@ -1290,7 +1300,8 @@ plot_NDVI_TDiff_exp_slope_coeff <- function(data, combined_coef_fig, output_figu
     geom_errorbar(aes(ymin=pmax(0, abs_slope-se), ymax=abs_slope+se), width=0.2) +
     geom_text(aes(label=if_else(p_val<0.05, sprintf("%.2f*", r_squared), sprintf("%.2f", r_squared)),
                   y=abs_slope/2), size=5) +
-    scale_fill_manual(values=cb_palette, guide=FALSE) + labs(y="absolute slope", x="") +
+    scale_fill_manual(values=cb_palette, guide=FALSE) +
+    labs(y = TeX("$|\\lambda\\, Q_{50}(T_{ d})|$"), x = "") +
     ggtitle("(c)") +
     theme_minimal() +
     theme(
@@ -1333,3 +1344,40 @@ plot_NDVI_TDiff_exp_slope_coeff(data,
                                 "results_rootzone/Figures_till2022/supplementary/NDVI_Q_TDiffbin_exp_coeff_till2022.png",
                                 "results_rootzone/Figures_till2022/main/NDVI_Q_TDiffbin_exp_slope_till2022.png",
                                 "results_rootzone/Figures_till2022/supplementary/NDVI_Q_TDiffbin_exp_aic_till2022.png")
+
+extract_linear_coefficients <- function(data) {
+  
+  library(dplyr)
+  library(broom)
+  
+  # Prepare data
+  data <- NDVI_PSIbin(data)
+  data <- na.omit(data)
+  data$species <- factor(data$species, levels = c("Oak", "Beech", "Spruce", "Pine"))
+  data <- data %>% mutate(x = bin_median)
+  
+  # Perform linear regressions per species
+  coef_df <- data %>%
+    group_by(species) %>%
+    do({
+      m <- lm(avg_value ~ x, data = .)
+      tidy_m <- tidy(m)
+      
+      tibble(
+        a = tidy_m$estimate[ tidy_m$term == "(Intercept)" ],
+        b = tidy_m$estimate[ tidy_m$term == "x" ],
+        p_a = tidy_m$p.value[ tidy_m$term == "(Intercept)" ],
+        p_b = tidy_m$p.value[ tidy_m$term == "x" ]
+      )
+    }) %>%
+    ungroup() %>%
+    mutate(
+      sig_a = if_else(p_a < 0.05, "*", ""),
+      sig_b = if_else(p_b < 0.05, "*", ""),
+      a_with_sig = paste0(round(a, 3), sig_a),
+      b_with_sig = paste0(round(b, 3), sig_b)
+    )
+  
+  return(coef_df)
+}
+extract_linear_coefficients(data)
