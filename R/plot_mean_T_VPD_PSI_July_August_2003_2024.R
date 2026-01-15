@@ -517,6 +517,8 @@ all_df <- bind_rows(df_list) %>%
 # Save spatial means (no year)
 save(all_df, file = "results/Data/mean_Temp_VPD.RData")
 
+load("results/Data/mean_Temp_VPD.RData")
+
 # Also save species‐level time series (with year)
 ts_df <- bind_rows(ts_list) %>%
   mutate(species = factor(species, levels = species_list))
