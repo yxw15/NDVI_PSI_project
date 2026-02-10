@@ -1,52 +1,77 @@
-setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project/results_spatial")
+setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
 
-# Load required libraries
+library(tidyverse)
 library(ggplot2)
-library(dplyr)
 
-# Read CSV files for each parameter at two distances
-quantiles_0.2 <- read.csv("Quantiles_spatial_0.2.csv")
-quantiles_0.4 <- read.csv("Quantiles_spatial_0.4.csv")
-psi_0.2       <- read.csv("PSI_spatial_0.2.csv")
-psi_0.4       <- read.csv("PSI_spatial_0.4.csv")
-tdiff_0.2     <- read.csv("TDiff_spatial_0.2.csv")
-tdiff_0.4     <- read.csv("TDiff_spatial_0.4.csv")
-
-# Add a new column indicating the parameter for each dataset
-quantiles_0.2$Parameter <- "Quantiles"
-quantiles_0.4$Parameter <- "Quantiles"
-psi_0.2$Parameter       <- "PSI"
-psi_0.4$Parameter       <- "PSI"
-tdiff_0.2$Parameter     <- "TDiff"
-tdiff_0.4$Parameter     <- "TDiff"
-
-# Combine all data frames into one
-combined_data <- rbind(quantiles_0.2, quantiles_0.4,
-                       psi_0.2, psi_0.4,
-                       tdiff_0.2, tdiff_0.4)
-
-# Ensure 'distance' is numeric
-combined_data$distance <- as.numeric(as.character(combined_data$distance))
-
-# Create a line plot using ggplot2
-ggplot(combined_data, aes(x = distance, y = Moran_I, color = Parameter, group = Parameter)) +
-  geom_line() +
-  geom_point() +
-  labs(title = "Moran's I vs Distance for Three Parameters",
-       x = "Distance (degrees)",
-       y = "Moran's I") +
-  theme_minimal() +
+# ----------------------------
+# Theme + colors
+# ----------------------------
+base_theme <- theme_minimal() +
   theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    plot.background = element_rect(fill = "white", color = "white"),
-    panel.background = element_rect(fill = "white"),
-    legend.background = element_rect(fill = "white", color = "white"),
-    plot.title = element_text(hjust = 0.5, size = 18, face = "bold", color = "black"),
-    axis.title = element_text(face = "bold"),
-    axis.text = element_text(color = "black"),
+    plot.background  = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.text = element_text(color = "black", size = 14),
+    legend.position = "bottom",
+    plot.title  = element_text(hjust = 0.5, size = 18, color = "black"),
+    axis.title  = element_text(size = 16),
+    axis.text.x = element_text(angle = 0, hjust = 0.5, size = 12),
+    axis.text.y = element_text(angle = 0, hjust = 0.5, size = 12),
+    panel.grid.major = element_line(color = "grey85", linewidth = 0.4),
+    panel.grid.minor = element_line(color = "grey92", linewidth = 0.25),
     panel.border = element_blank(),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    legend.position = "top"
+    strip.text = element_text(size = 14)
   )
-ggsave("moran_distance.png")
+
+sp_cols <- c(Oak="#E69F00", Beech="#0072B2", Spruce="#009E73", Pine="#F0E442")
+
+# ----------------------------
+# Read all csv in data/
+# ----------------------------
+files <- list.files("results_moran/data", pattern = "\\.csv$", full.names = TRUE)
+
+combined <- purrr::map_dfr(files, function(f) {
+  df <- readr::read_csv(f, show_col_types = FALSE)
+  
+  # infer "Panel" from filename
+  panel <- dplyr::case_when(
+    str_detect(basename(f), "Quantiles") ~ "NDVI quantiles (rank)",
+    str_detect(basename(f), "soil_water_potential") ~ "soil water potential (kPa)",
+    str_detect(basename(f), "transpiration_deficit") ~ "transpiration deficit (mm)",
+    TRUE ~ "Other"
+  )
+  
+  df %>% mutate(Panel = panel)
+})
+
+# ----------------------------
+# Clean / order
+# ----------------------------
+combined <- combined %>%
+  mutate(
+    Distance = as.numeric(Distance),
+    Moran_I  = as.numeric(Moran_I),
+    Species  = factor(Species, levels = c("Oak", "Beech", "Spruce", "Pine")),
+    Panel    = factor(Panel, levels = c("NDVI quantiles (rank)", "soil water potential (kPa)", "transpiration deficit (mm)")),
+    Significance = if_else(is.na(Significance), "", as.character(Significance))
+  )
+
+# ----------------------------
+# Plot: 3 panels + species colors + "*" below points
+# ----------------------------
+p <- ggplot(combined, aes(x = Distance, y = Moran_I, color = Species, group = Species)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2.2) +
+  geom_text(aes(label = Significance), vjust = 2.2, show.legend = FALSE) +
+  facet_wrap(~Panel, nrow = 1, scales = "fixed") +
+  scale_color_manual(values = sp_cols, drop = FALSE) +
+  labs(
+    title = "",
+    x = "distance (m)",
+    y = "Moran's I",
+    color = ""
+  ) +
+  base_theme
+
+p
+ggsave("results_rootzone/Figures_till2022/SI_PSI/SI_moran_distance.png", plot = p, width = 12, height = 6, dpi = 300)

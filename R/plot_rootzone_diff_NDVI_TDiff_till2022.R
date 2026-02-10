@@ -105,19 +105,21 @@ write.csv(big_df,
           file.path(results_dir, "pixel_pairs_diff_NDVI_TDIFF_rootzone.csv"),
           row.names = FALSE)
 
+big_df <- read.csv(file.path(results_dir, "pixel_pairs_diff_NDVI_TDIFF_rootzone.csv"))
+
 #─── 5. Bin TDiff and summarize NDVI ─────────────────────────────────────────
 bin_summary <- big_df %>%
   filter(!is.na(NDVI), !is.na(TDiff)) %>%
   mutate(TDiff_bin = cut(TDiff,
                          breaks = seq(floor(min(TDiff)), ceiling(max(TDiff)), by = 3),
                          include.lowest = TRUE, right = FALSE)) %>%
-  group_by(NDVI_species, TDiff_species, DOY, TDiff_bin) %>%
+  group_by(NDVI_species, TDiff_species, TDiff_bin) %>%
   summarise(
     avg_NDVI = mean(NDVI, na.rm = TRUE),
     count    = n(),
     .groups  = 'drop'
   ) %>%
-  group_by(NDVI_species, TDiff_species, DOY) %>%
+  group_by(NDVI_species, TDiff_species) %>%
   mutate(
     total_pixels     = sum(count),
     pixel_percentage = count / total_pixels,
@@ -129,7 +131,8 @@ bin_summary <- big_df %>%
       mean(nums)
     })
   ) %>%
-  filter(pixel_percentage >= 0.0001) %>%
+  # filter(pixel_percentage >= 0.0001) %>%
+  filter(count >= 1000) %>%
   ungroup()
 
 write.csv(bin_summary,
@@ -256,3 +259,4 @@ ggsave(
   height= 8,
   dpi   = 300
 )
+

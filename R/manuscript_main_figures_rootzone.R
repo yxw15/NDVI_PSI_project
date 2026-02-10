@@ -385,7 +385,8 @@ NDVI_PSIbin <- function(df, bin_width = 50) {
     ) %>%
     left_join(species_totals, by = "species") %>%
     mutate(percentage = count / total_pixels) %>%
-    filter(percentage >= 0.001) %>%
+    # filter(percentage >= 0.001) %>%
+    filter(count >= 1000) %>% 
     select(species, PSI_bin, bin_median, avg_value, count, total_pixels, percentage)
   
   return(meanNDVI_PSIbin_species)

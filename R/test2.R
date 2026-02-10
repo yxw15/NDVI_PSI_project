@@ -1,213 +1,208 @@
-# ==========================================
-# Complete TDiff x PSI plotting script (4-panel) with messages
-# ==========================================
-
-# --------------------------
-# 0. Libraries
-# --------------------------
-message("Loading libraries...")
-library(terra)
-library(dplyr)
-library(ggplot2)
-library(scales)
-
-# --------------------------
-# 1. Parameters
-# --------------------------
-message("Setting parameters...")
-setwd("/dss/dssfs02/lwp-dss-0001/pr48va/pr48va-dss-0000/yixuan/NDVI_PSI_project")
-
-species <- c("Oak", "Beech")
-months  <- c("July")
-years   <- 2018
-base_dir <- "results_monthly_rootzone"
-
-# --------------------------
-# 2. Load species masks
-# --------------------------
-message("Loading species masks...")
-species_masks <- lapply(species, function(sp) {
-  message("  - Loading mask for ", sp)
-  rast(file.path("species_map_MODIS", paste0(sp, ".tif")))
-})
-names(species_masks) <- species
-
-# --------------------------
-# 3. Build panel dataframe function
-# --------------------------
-message("Defining function to build panel dataframe with month/year...")
-
-build_panel_df <- function(mask_sp, month_i, year_i) {
-  message("Processing panel: ", mask_sp, " | Month: ", month_i, " | Year: ", year_i)
-  
-  mask <- species_masks[[mask_sp]]
-  
-  # --- TDiff: only panel species ---
-  tdiff_path <- file.path(base_dir, month_i, mask_sp, paste0("tdiff_", year_i, ".tif"))
-  tdiff <- rast(tdiff_path) |> project(mask) |> mask(mask)
-  tdiff_df <- as.data.frame(tdiff, xy = TRUE, na.rm = TRUE)
-  names(tdiff_df)[3] <- "transpiration_deficit"
-  tdiff_df$mask_species <- mask_sp
-  tdiff_df$month <- month_i
-  tdiff_df$year  <- year_i
-  
-  # --- PSI: all species masked by panel ---
-  psi_list <- lapply(species, function(psi_sp) {
-    message("  - Masking PSI species ", psi_sp, " to panel ", mask_sp)
-    psi_path <- file.path(base_dir, month_i, psi_sp, paste0("psi_", year_i, ".tif"))
-    psi <- rast(psi_path) |> project(mask) |> mask(mask)
-    df <- as.data.frame(psi, xy = TRUE, na.rm = TRUE)
-    names(df)[3] <- "soil_water_potential"
-    df$PSI_species <- psi_sp
-    df$mask_species <- mask_sp
-    df$month <- month_i
-    df$year  <- year_i
-    df
+plot_PSI_PSI_pairwise_GAM <- function(
+    years   = 2003:2022,
+    months  = c("July", "August"),
+    species = c("Oak", "Beech", "Spruce", "Pine"),
+    base_dir = "results_monthly_rootzone",
+    bin_width = 50,
+    min_count = 1000,
+    k = 6,                  # GAM basis dimension
+    smooth_method = "REML", # mgcv smoothing parameter estimation
+    point_size = 2,
+    point_alpha = 0.4,
+    smooth_alpha = 0.25,
+    smooth_linewidth = 1.2,
+    abline_lwd = 0.8,
+    cb_palette = c(Oak="#E69F00", Beech="#0072B2", Spruce="#009E73", Pine="#F0E442"),
+    cb_shapes  = c(Oak=16, Beech=17, Spruce=15, Pine=18),
+    save_path = NULL,
+    save_width = 12,
+    save_height = 8,
+    save_dpi = 300
+) {
+  suppressPackageStartupMessages({
+    library(terra)
+    library(tidyverse)
+    library(mgcv)
+    library(scales)
+    library(patchwork)
   })
-  psi_df <- bind_rows(psi_list)
   
-  # Join TDiff and PSI by x, y, mask_species, month, year
-  left_join(tdiff_df, psi_df, by = c("x", "y", "mask_species", "month", "year"))
-}
-
-# --------------------------
-# 4. Generate full dataset across months, years, species
-# --------------------------
-message("Building full dataset across all months, years, and species...")
-full_df_list <- list()
-for (m in months) {
-  for (y in years) {
-    for (sp in species) {
-      key <- paste(sp, m, y, sep="_")
-      full_df_list[[key]] <- build_panel_df(sp, m, y)
-    }
-  }
-}
-full_df <- bind_rows(full_df_list)
-
-bin_summary <- full_df %>%
-  filter(!is.na(transpiration_deficit), !is.na(soil_water_potential)) %>%
-  mutate(PSI_bin = cut(soil_water_potential,
-                       breaks = seq(floor(min(soil_water_potential)), ceiling(max(soil_water_potential)), by = 50),
-                       include.lowest = TRUE, right = FALSE)) %>%
-  group_by(mask_species, PSI_species, PSI_bin) %>%
-  summarise(
-    avg_transpiration_deficit = mean(transpiration_deficit, na.rm = TRUE),
-    count    = n(),
-    .groups  = 'drop'
-  ) %>%
-  group_by(mask_species, PSI_species) %>%
-  mutate(
-    total_pixels     = sum(count),
-    pixel_percentage = count / total_pixels,
-    bin_median       = sapply(as.character(PSI_bin), function(lbl) {
-      # double-escaped backslashes so gsub() sees \[ \] \( \)
-      nums <- as.numeric(strsplit(
-        gsub("\\[|\\]|\\(|\\)", "", lbl),
-        ","
-      )[[1]])
-      mean(nums)
-    })
-  ) %>%
-  filter(pixel_percentage >= 0.001) %>%
-  ungroup()
-
-cb_palette <- c(Oak="#E69F00", Beech="#0072B2", Spruce="#009E73", Pine="#F0E442")
-plot_df <- bin_summary %>%
-  mutate(
-    mask_species = factor(mask_species, levels = species),
-    PSI_species  = factor(PSI_species,  levels = species),
-    pixel_pct    = pixel_percentage * 100
+  # ---- Theme + Guides (Figure-2 style) ----
+  base_theme <- theme_minimal() +
+    theme(
+      plot.background  = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
+      legend.background = element_rect(fill = "white", color = NA),
+      legend.text = element_text(color = "black", size = 14),
+      legend.position = "bottom",
+      plot.title  = element_text(hjust = 0.5, size = 18, color = "black"),
+      axis.title  = element_text(size = 16),
+      axis.text.x = element_text(angle = 0, hjust = 0.5, size = 12),
+      axis.text.y = element_text(angle = 0, hjust = 0.5, size = 12),
+      panel.grid.major = element_line(color = "grey85", linewidth = 0.4),
+      panel.grid.minor = element_line(color = "grey92", linewidth = 0.25),
+      panel.border = element_blank(),
+      strip.text = element_text(size = 14)
+    )
+  
+  base_guides <- guides(
+    size  = guide_legend(order = 1, override.aes = list(alpha = 1)),
+    color = guide_legend(order = 2, override.aes = list(linewidth = 1.2, alpha = 1)),
+    shape = guide_legend(order = 2)
   )
-
-plot_df_clean <- plot_df %>%
-  filter(!is.na(avg_transpiration_deficit), !is.na(bin_median))
-
-fit_poly_curves <- function(df, key) {
-  # Clean data: remove NAs and ensure we have enough points for Poly 3 (needs >= 4)
-  df_clean <- df[is.finite(df$bin_median) & is.finite(df$avg_transpiration_deficit), ]
-  vals <- df_clean$bin_median
   
-  if (nrow(df_clean) < 4) {
-    return(tibble(bin_median = numeric(0), fit = numeric(0), model = character(0)))
+  # ---- 1) read rasters ----
+  read_psi <- function(year, month, species_name) {
+    file_path <- file.path(base_dir, month, species_name, paste0("psi_", year, ".tif"))
+    r <- rast(file_path)
+    
+    df <- as.data.frame(r, xy = TRUE, na.rm = TRUE)
+    colnames(df)[3] <- "soil_water_potential"
+    
+    df %>%
+      mutate(
+        species = species_name,
+        month   = month,
+        year    = year
+      )
   }
   
-  # Group info for logging
-  m_sp <- key$mask_species
-  p_sp <- key$PSI_species
-  cat("\nFitting Poly 1-3 for Panel:", as.character(m_sp), "| Line:", as.character(p_sp), "\n")
+  psi_all <- expand.grid(
+    year = years, month = months, species = species, stringsAsFactors = FALSE
+  ) %>%
+    pmap_dfr(~ read_psi(..1, ..2, ..3))
   
-  # Fit the three models
-  m1 <- lm(avg_transpiration_deficit ~ poly(bin_median, 1, raw = TRUE), data = df_clean)
-  m2 <- lm(avg_transpiration_deficit ~ poly(bin_median, 2, raw = TRUE), data = df_clean)
-  m3 <- lm(avg_transpiration_deficit ~ poly(bin_median, 3, raw = TRUE), data = df_clean)
+  # ---- 2) wide ----
+  psi_wide <- psi_all %>%
+    pivot_wider(names_from = species, values_from = soil_water_potential)
   
-  # Calculate AICs
-  aics <- c("poly1" = AIC(m1), "poly2" = AIC(m2), "poly3" = AIC(m3))
-  best_model_name <- names(which.min(aics))
-  best_model <- list("poly1" = m1, "poly2" = m2, "poly3" = m3)[[best_model_name]]
+  # ---- 3) long + pairwise join ----
+  psi_long <- psi_wide %>%
+    pivot_longer(cols = all_of(species), names_to = "species", values_to = "psi_value")
   
-  cat("AICs -> P1:", round(aics[1],1), "P2:", round(aics[2],1), "P3:", round(aics[3],1), 
-      "| Chosen:", best_model_name, "\n")
+  psi_pairs <- psi_long %>%
+    inner_join(
+      psi_long,
+      by = c("x", "y", "month", "year"),
+      suffix = c("_x", "_y"),
+      relationship = "many-to-many"
+    ) %>%
+    filter(species_x != species_y) %>%
+    mutate(
+      species_x = factor(species_x, levels = species),
+      species_y = factor(species_y, levels = species)
+    )
   
-  # Create smooth prediction grid
-  grid <- tibble(bin_median = seq(min(vals), max(vals), length.out = 100))
-  grid$fit   <- predict(best_model, newdata = grid)
-  grid$model <- best_model_name
+  # ---- 4) bin x PSI and summarise ----
+  psi_summary <- psi_pairs %>%
+    group_by(species_x) %>%
+    mutate(
+      PSI_bin = cut(
+        psi_value_x,
+        breaks = seq(
+          floor(min(psi_value_x, na.rm = TRUE)),
+          ceiling(max(psi_value_x, na.rm = TRUE)),
+          by = bin_width
+        ),
+        include.lowest = TRUE,
+        right = FALSE
+      )
+    ) %>%
+    group_by(species_x, species_y, PSI_bin) %>%
+    summarise(
+      bin_mean   = mean(psi_value_x, na.rm = TRUE),
+      mean_PSI_y = mean(psi_value_y, na.rm = TRUE),
+      count      = n(),
+      .groups    = "drop"
+    ) %>%
+    filter(count >= min_count) %>%
+    group_by(species_x, species_y) %>%
+    mutate(percentage = count / sum(count, na.rm = TRUE)) %>%
+    ungroup()
   
-  return(grid)
+  # ---- 5) plotting (Figure-2 legend logic) ----
+  # Key idea:
+  #   - legend comes from POINTS (color+shape) + SIZE
+  #   - ribbon exists but does NOT create its own legend
+  #   - smooth line uses color mapping so it appears in the species legend
+  p <- ggplot(
+    psi_summary,
+    aes(x = bin_mean, y = mean_PSI_y, color = species_y, shape = species_y)
+  ) +
+    geom_abline(
+      slope = 1, intercept = 0,
+      linetype = "dashed", alpha = 0.5, linewidth = abline_lwd
+    ) +
+    
+    # points
+    geom_point(aes(size = percentage), alpha = point_alpha) +
+    
+    # ribbon only (no legend)
+    geom_smooth(
+      aes(group = species_y, fill = species_y),
+      method  = "gam",
+      formula = y ~ s(x, k = k),
+      method.args = list(method = smooth_method),
+      se  = TRUE,
+      alpha = smooth_alpha,
+      linewidth = 0,
+      show.legend = FALSE
+    ) +
+    
+    # line only (drives "species" legend via color)
+    geom_smooth(
+      aes(group = species_y),
+      method  = "gam",
+      formula = y ~ s(x, k = k),
+      method.args = list(method = smooth_method),
+      se  = FALSE,
+      linewidth = smooth_linewidth,
+      show.legend = FALSE   # <- keep legend identical to Figure 2 (species legend from points)
+    ) +
+    
+    facet_wrap(~ species_x, ncol = 2, scales = "free") +
+    
+    scale_color_manual(values = cb_palette, name = "") +
+    scale_fill_manual(values = cb_palette,  name = "") +
+    scale_shape_manual(values = cb_shapes,  name = "") +
+    scale_size_continuous(
+      range  = c(1, 8),
+      labels = percent_format(accuracy = 1),
+      name   = "pixels per bin (%)"
+    ) +
+    
+    labs(
+      x = "soil water potential of panel species (kPa)",
+      y = "soil water potential of line species (kPa)"
+    ) +
+    
+    base_theme +
+    base_guides +
+    guides(fill = "none") +
+    theme(legend.position = "bottom")
+  
+  if (!is.null(save_path)) {
+    dir.create(dirname(save_path), recursive = TRUE, showWarnings = FALSE)
+    ggsave(
+      filename = save_path,
+      plot = p,
+      width = save_width,
+      height = save_height,
+      dpi = save_dpi,
+      bg = "white"
+    )
+  }
+  
+  invisible(list(plot = p, psi_summary = psi_summary))
 }
 
-# 1. Compute fitted curves
-fitted_df <- plot_df_clean %>%
-  group_by(mask_species, PSI_species) %>%
-  group_modify(~ fit_poly_curves(.x, .y)) %>%
-  ungroup()
-
-# 2. Build the Plot
-p_tdiff_psi <- ggplot(plot_df_clean, aes(
-  x     = bin_median, 
-  y     = avg_transpiration_deficit, 
-  color = PSI_species,
-  size  = pixel_pct
-)) +
-  # Raw data points
-  geom_point(alpha = 0.5) +
-  # Best-fit polynomial lines
-  geom_line(
-    data = fitted_df,
-    aes(
-      x        = bin_median,
-      y        = fit,
-      color    = PSI_species,
-      linetype = model, # Line type shows which poly degree was chosen
-      group    = interaction(mask_species, PSI_species)
-    ),
-    linewidth = 1.1,
-    inherit.aes = FALSE
-  ) +
-  facet_wrap(~ mask_species, ncol = 2) +
-  scale_color_manual(values = cb_palette) + 
-  scale_size_continuous(range = c(0.5, 4)) +
-  labs(
-    x = "Soil Water Potential (bin median)",
-    y = "Avg Transpiration Deficit",
-    title = "Transpiration Deficit vs PSI: Polynomial AIC Selection"
-  ) +
-  theme_minimal() +
-  theme(
-    axis.text.x       = element_text(angle = 0, hjust = 0.5),
-    plot.background   = element_rect(fill = "white", color = "white"),
-    panel.background  = element_rect(fill = "white"),
-    legend.background = element_rect(fill = "white", color = "white"),
-    plot.title        = element_text(hjust = 0.5, size = 16, face = "bold"),
-    axis.title        = element_text(face = "bold", size = 14),
-    axis.text         = element_text(color = "black", size = 12),
-    panel.border      = element_rect(color = "black", fill = NA, linewidth = 0.5),
-    strip.background  = element_rect(fill = "white", color = "black", linewidth = 0.5),
-    strip.text        = element_text(face = "bold", size = 12),
-    legend.position   = "right",
-    legend.text       = element_text(size = 12)
-  )
-
-print(p_tdiff_psi)
+out <- plot_PSI_PSI_pairwise_GAM(
+  years = 2003:2022,
+  months = c("July","August"),
+  base_dir = "results_monthly_rootzone",
+  bin_width = 50,
+  min_count = 1000,
+  k = 6,
+  save_path = "results_rootzone/Figures_till2022/main_PSI/F3_PSI_PSI_pairwise_4panel_GAM.png"
+)
+print(out$plot)

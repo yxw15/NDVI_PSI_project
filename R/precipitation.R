@@ -103,6 +103,8 @@ precip_df <- bind_rows(df_list_precip) %>%
 
 save(precip_df, file = "results/Data/mean_precip_2003_2022.RData")
 
+load("results/Data/mean_precip_2003_2022.RData")
+
 boundary_germany <- ne_countries(scale="medium",
                                  country="Germany",
                                  returnclass="sf")

@@ -385,7 +385,8 @@ NDVI_PSIbin <- function(df, bin_width = 50) {
     ) %>%
     left_join(species_totals, by = "species") %>%
     mutate(percentage = count / total_pixels) %>%
-    filter(percentage >= 0.001) %>%
+    # filter(percentage >= 0.001) %>%
+    filter(count >= 1000) %>% 
     select(species, PSI_bin, bin_median, avg_value, count, total_pixels, percentage)
   
   return(meanNDVI_PSIbin_species)
@@ -945,7 +946,8 @@ NDVI_TDiffbin <- function(df, bin_width = 3) {
     mutate(bin_median = sapply(as.character(TDiff_bin), get_bin_median)) %>%
     left_join(species_totals, by = "species") %>%
     mutate(percentage = count / total_pixels) %>%
-    filter(percentage >= 0.0001) %>%
+    # filter(percentage >= 0.0001) %>%
+    filter(count >= 1000) %>% 
     select(species, TDiff_bin, bin_median, avg_value, count, total_pixels, percentage)
   
   return(meanNDVI_TDiffbin_species)
@@ -1351,7 +1353,7 @@ extract_linear_coefficients <- function(data) {
   library(broom)
   
   # Prepare data
-  data <- NDVI_PSIbin(data)
+  data <- NDVI_TDiffbin(data)
   data <- na.omit(data)
   data$species <- factor(data$species, levels = c("Oak", "Beech", "Spruce", "Pine"))
   data <- data %>% mutate(x = bin_median)

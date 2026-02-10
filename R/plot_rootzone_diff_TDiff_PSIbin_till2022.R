@@ -247,9 +247,9 @@ species_masks <- list(
   Pine   = rast("species_map_MODIS/Pine.tif")
 )
 
-# ==========================================
-# Complete TDiff x PSI plotting script (4-panel) with messages
-# ==========================================
+# ==================================================
+# TDiff x PSI (different species) plotting (4-panel) 
+# ==================================================
 
 # --------------------------
 # 0. Libraries
@@ -280,10 +280,11 @@ species_masks <- lapply(species, function(sp) {
 })
 names(species_masks) <- species
 
+
 # --------------------------
 # 3. Build panel dataframe function
 # --------------------------
-message("Defining function to build panel dataframe with month/year...")
+message("Defining function to build panel dataframe with month, year, transpiration_deficit, soil_water_potential, mask_species, PSI_species")
 
 build_panel_df <- function(mask_sp, month_i, year_i) {
   message("Processing panel: ", mask_sp, " | Month: ", month_i, " | Year: ", year_i)
@@ -334,6 +335,7 @@ for (m in months) {
 full_df <- bind_rows(full_df_list)
 
 save(full_df, file = "results_rootzone/Data/Germany_PSI_TDiff_diff_match_all_species_months_years.RData")
+load("results_rootzone/Data/Germany_PSI_TDiff_diff_match_all_species_months_years.RData")
 
 bin_summary <- full_df %>%
   filter(!is.na(transpiration_deficit), !is.na(soil_water_potential)) %>%
@@ -359,7 +361,8 @@ bin_summary <- full_df %>%
       mean(nums)
     })
   ) %>%
-  filter(pixel_percentage >= 0.001) %>%
+  # filter(pixel_percentage >= 0.001) %>%
+  filter(count >= 1000) %>% 
   ungroup()
 
 cb_palette <- c(Oak="#E69F00", Beech="#0072B2", Spruce="#009E73", Pine="#F0E442")
@@ -374,6 +377,8 @@ plot_df_clean <- plot_df %>%
   filter(!is.na(avg_transpiration_deficit), !is.na(bin_median))
 
 save(plot_df_clean, file = "results_rootzone/Data/Germany_PSI_TDiff_diff_match_all_species_months_years_plot_df_clean.RData")
+
+load("results_rootzone/Data/Germany_PSI_TDiff_diff_match_all_species_months_years_plot_df_clean.RData")
 
 fit_poly_curves <- function(df, key) {
   # Clean data: remove NAs and ensure we have enough points for Poly 3 (needs >= 4)
@@ -439,6 +444,10 @@ p_tdiff_psi <- ggplot(plot_df_clean, aes(
     inherit.aes = FALSE
   ) +
   facet_wrap(~ mask_species, ncol = 2) +
+  scale_linetype_manual(
+    values = c("poly3" = "solid", "poly2" = "dashed"),
+    name = "model" # Or name = "" to hide the title
+  ) +
   scale_color_manual(
     values = cb_palette, 
     # Use expression() for mathematical symbols
@@ -481,11 +490,3 @@ ggsave("results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_mix_fitted_
        plot=p_tdiff_psi, width=10, height=8, dpi=300)
 
 message("Script complete ✅ Each panel = TDiff masked by panel species, each curve = PSI species masked by panel species.")
-
-# ==========================
-# Script complete
-# Each panel = TDiff masked by panel species
-# Each curve = PSI species masked by panel species
-# Polynomial curves fitted using AIC selection
-# ==========================
-

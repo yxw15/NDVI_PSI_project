@@ -659,7 +659,7 @@ plot_distribution_PSI_TDiff(
 ### S5 S6 distribution of mean temperature and VPD ###
 
 
-###–––––––––––––––––––––––––––––––––––––––––
+###–––––––––––––––––––––––––––––––––––––––––#####
 # Compute & Plot Mean Temp & VPD (2003–2022)
 ###–––––––––––––––––––––––––––––––––––––––––
 
@@ -1393,7 +1393,8 @@ NDVI_PSIbin <- function(df, bin_width = 50) {
     ) %>%
     left_join(species_totals, by = "species") %>%
     mutate(percentage = count / total_pixels) %>%
-    filter(percentage >= 0.001) %>%
+    # filter(percentage >= 0.001) %>%
+    filter(count >= 1000) %>% 
     select(species, PSI_bin, bin_median, avg_value, count, total_pixels, percentage)
   
   return(meanNDVI_PSIbin_species)
@@ -1441,7 +1442,8 @@ NDVI_TDiffbin <- function(df, bin_width = 3) {
     mutate(bin_median = sapply(as.character(TDiff_bin), get_bin_median)) %>%
     left_join(species_totals, by = "species") %>%
     mutate(percentage = count / total_pixels) %>%
-    filter(percentage >= 0.0001) %>%
+    # filter(percentage >= 0.0001) %>%
+    filter(count >= 1000) %>% 
     select(species, TDiff_bin, bin_median, avg_value, count, total_pixels, percentage)
   
   return(meanNDVI_TDiffbin_species)
@@ -1475,7 +1477,8 @@ TDiff_PSIbin <- function(df, bin_width = 50) {
     ) %>%
     left_join(species_totals, by = "species") %>%
     mutate(percentage = count / total_pixels) %>%
-    filter(percentage > 0.001) %>%
+    # filter(percentage > 0.001) %>%
+    filter(count >= 1000) %>% 
     select(species, PSI_bin, bin_median, avg_transpiration_deficit, count, total_pixels, percentage)
   
   return(meanTDiff_PSIbin_species)
@@ -1812,7 +1815,8 @@ TDiff_PSIbin <- function(df, bin_width = 50) {
     ) %>%
     left_join(species_totals, by = "species") %>%
     mutate(percentage = count / total_pixels) %>%
-    filter(percentage > 0.001) %>%
+    # filter(percentage > 0.001) %>%
+    filter(count >= 1000) %>%
     select(species, PSI_bin, bin_median, avg_transpiration_deficit, count, total_pixels, percentage)
   
   return(meanTDiff_PSIbin_species)
@@ -2324,6 +2328,76 @@ plot_TDiff_PSIbin_onlyA <- function(data, figure_output) {
 }
 
 plot_TDiff_PSIbin_onlyA(data, "results_rootzone/Figures_till2022/supplementary/TDiff_PSIbin_onlyA_till2022.png")
+
+plot_TDiff_PSIbin_onlyA_coeff <- function(data) {
+  
+  # -------------------------
+  # Preprocessing (match your original function)
+  # -------------------------
+  library(dplyr)
+  library(tidyr)
+  library(tibble)
+  library(purrr)
+  
+  df <- TDiff_PSIbin(data)
+  df <- na.omit(df)
+  
+  species_levels <- c("Oak", "Beech", "Spruce", "Pine")
+  xcol <- "bin_median"
+  ycol <- "avg_transpiration_deficit"
+  
+  # degrees to evaluate
+  degrees <- c(1, 2, 3)
+  
+  # -------------------------
+  # Coefficient Extraction Logic
+  # -------------------------
+  res_list <- map_df(species_levels, function(sp) {
+    sdf <- df %>% filter(species == sp)
+    
+    if (nrow(sdf) < 5) return(NULL)
+    
+    # Fit each degree and extract coefficients
+    map_df(degrees, function(d) {
+      # Use raw = TRUE so coefficients are easily interpretable 
+      # (e.g., intercept, x, x^2) rather than orthogonal polynomials
+      fm <- as.formula(paste0(ycol, " ~ poly(", xcol, ", ", d, ", raw = TRUE)"))
+      fit <- lm(fm, data = sdf)
+      
+      # Extract coefficients and tidy them
+      coeffs <- coef(fit)
+      
+      data.frame(
+        species = sp,
+        poly_degree = d,
+        term = names(coeffs),
+        estimate = as.numeric(coeffs)
+      )
+    })
+  })
+  
+  # -------------------------
+  # Formatting for Display
+  # -------------------------
+  # Pivoting wider makes it much easier to read as a table
+  coeff_table <- res_list %>%
+    mutate(term = case_when(
+      term == "(Intercept)" ~ "Intercept",
+      grepl("1", term) ~ "beta_1 (x)",
+      grepl("2", term) ~ "beta_2 (x^2)",
+      grepl("3", term) ~ "beta_3 (x^3)",
+      TRUE ~ term
+    )) %>%
+    pivot_wider(names_from = term, values_from = estimate)
+  
+  # Print to console
+  cat("\n--- Polynomial Coefficients by Species ---\n")
+  print(as.data.frame(coeff_table), digits = 4)
+  
+  return(invisible(coeff_table))
+}
+
+plot_TDiff_PSIbin_onlyA_coeff(data)
 
 plot_TDiff_PSIbin_clean <- function(data, coef_output, figure_output) {
   
