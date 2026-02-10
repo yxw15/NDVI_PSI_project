@@ -618,7 +618,7 @@ load("results_rootzone/Data/psi_summary_pairwise.RData")
 
 plot_PSI_PSI_pairwise_GAM <- function(
     df_summary,
-    k = 6,
+    k = 3,
     smooth_method = "REML",
     point_alpha = 0.4,
     smooth_alpha = 0.25,
@@ -662,30 +662,16 @@ plot_PSI_PSI_pairwise_GAM <- function(
       show.legend = c(color = FALSE, shape = FALSE, size = TRUE)
     ) +
     
-    ## --- (A) Ribbon layer: THIS drives species legend (fill) ---
     geom_smooth(
-      aes(group = species_y, fill = species_y),
+      aes(color = species_y, fill = species_y, group = species_y),
       method  = "gam",
       formula = y ~ s(x, k = k),
       method.args = list(method = smooth_method),
       se = TRUE,
       alpha = smooth_alpha,
-      linewidth = 0,                # ribbon only
-      color = NA,                   # no line
-      show.legend = TRUE            # <-- IMPORTANT: allow legend
+      linewidth = smooth_linewidth
     ) +
-    
-    # --- (B) Line layer: drawn in plot, but not in legend ---
-    geom_smooth(
-      aes(group = species_y, color = species_y),
-      method  = "gam",
-      formula = y ~ s(x, k = k),
-      method.args = list(method = smooth_method),
-      se = FALSE,
-      linewidth = smooth_linewidth,
-      show.legend = FALSE
-    ) +
-    
+  
     facet_wrap(~ species_x, ncol = 2, scales = "free") +
     
     scale_color_manual(values = cb_palette, name = "") +
@@ -712,7 +698,7 @@ plot_PSI_PSI_pairwise_GAM <- function(
       size = guide_legend(
         order = 1,
         override.aes = list(
-          colour = "grey70",
+          colour = "grey80",
           shape = 16,
           fill = NA,
           linewidth = 0,
@@ -748,7 +734,6 @@ plot_PSI_PSI_pairwise_GAM <- function(
   
   invisible(p)
 }
-
 
 out_plot <- plot_PSI_PSI_pairwise_GAM(
   df_summary = psi_summary, # Input the data you created/loaded
