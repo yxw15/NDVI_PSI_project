@@ -479,7 +479,7 @@ plot_NDVI_PSI_exp_linear_slope_coeff <- function(data, output_figure) {
     geom_text(aes(label = sprintf("%.2f%s", r_squared, ifelse(p_val < 0.05, "*", "")),
                   y = abs_slope/2)) +
     scale_fill_manual(values = cb_palette, guide = "none") +
-    labs(x = "", y = TeX("$|\\lambda\\, Q_{50}(\\Psi_{\\, \\, soil})|$")) +
+    labs(x = "", y = TeX("$|\\lambda_{\\, \\, Q_{50}} (\\Psi_{\\, \\, soil})|$"))+
     ggtitle("(c)") +
     base_theme +
     theme(
@@ -1042,15 +1042,110 @@ plot_F4_NDVI_PSIbin_area_Line_Diff(
 
 # ---- F4 Bar ----
 load("results_rootzone/Data/NDVI_PSI_TDiff_species_month_year_area.RData")
+# ---- NDVI_PSIbin Germany vs Species Functions  ----
 
-## F4 NDVI-PSIbin Germany vs Species-location Bar Difference (option 2) ###
+NDVI_PSIbin <- function(df, bin_width = 50, min_count = 1000) {
+  
+  # totals per (area, species) for percentage
+  species_totals <- df %>%
+    group_by(area, species) %>%
+    summarise(total_pixels = n(), .groups = "drop")
+  
+  # global bin breaks so bins consistent across everything
+  psi_min <- floor(min(df$soil_water_potential, na.rm = TRUE))
+  psi_max <- ceiling(max(df$soil_water_potential, na.rm = TRUE))
+  bin_breaks <- seq(psi_min, psi_max, by = bin_width)
+  
+  df %>%
+    mutate(
+      PSI_bin = cut(
+        soil_water_potential,
+        breaks = bin_breaks,
+        include.lowest = TRUE,
+        right = FALSE
+      )
+    ) %>%
+    group_by(area, species, PSI_bin) %>%
+    summarise(
+      bin_mean  = mean(soil_water_potential, na.rm = TRUE),
+      avg_value = mean(NDVI, na.rm = TRUE),
+      count     = n(),
+      .groups   = "drop"
+    ) %>%
+    left_join(species_totals, by = c("area", "species")) %>%
+    mutate(percentage = count / total_pixels) %>%
+    filter(count >= min_count) %>%
+    select(area, species, PSI_bin, bin_mean, avg_value, count, total_pixels, percentage)
+}
+
+# ---- NDVI_PSIbin Germany vs Species (Bar difference) ----
+NDVI_diff_species_minus_Germany_PSIbin <- function(df, bin_width = 50, min_count = 1000) {
+  psi_min <- floor(min(df$soil_water_potential, na.rm = TRUE))
+  psi_max <- ceiling(max(df$soil_water_potential, na.rm = TRUE))
+  bin_breaks <- seq(psi_min, psi_max, by = bin_width)
+  
+  df_binned <- df %>%
+    mutate(
+      PSI_bin = cut(
+        soil_water_potential,
+        breaks = bin_breaks,
+        include.lowest = TRUE,
+        right = FALSE
+      )
+    )
+  
+  totals <- df_binned %>%
+    group_by(area, species) %>%
+    summarise(total_n = n(), .groups = "drop")
+  
+  sp_tbl <- df_binned %>%
+    filter(area == "species") %>%
+    group_by(species, PSI_bin) %>%
+    summarise(
+      bin_mean = mean(soil_water_potential, na.rm = TRUE),
+      sp_mean  = mean(NDVI, na.rm = TRUE),
+      sp_n     = n(),
+      .groups  = "drop"
+    ) %>%
+    filter(sp_n >= min_count) %>%
+    left_join(
+      totals %>% filter(area == "species") %>% select(species, sp_total = total_n),
+      by = "species"
+    ) %>%
+    mutate(sp_pct = sp_n / sp_total)
+  
+  de_tbl <- df_binned %>%
+    filter(area == "Germany") %>%
+    group_by(species, PSI_bin) %>%
+    summarise(
+      de_mean = mean(NDVI, na.rm = TRUE),
+      de_n    = n(),
+      .groups = "drop"
+    ) %>%
+    filter(de_n >= min_count) %>%
+    left_join(
+      totals %>% filter(area == "Germany") %>% select(species, de_total = total_n),
+      by = "species"
+    ) %>%
+    mutate(de_pct = de_n / de_total)
+  
+  sp_tbl %>%
+    inner_join(de_tbl, by = c("species", "PSI_bin")) %>%
+    mutate(
+      diff_NDVI = sp_mean - de_mean,
+      pct_bin   = pmin(sp_pct, de_pct)
+    ) %>%
+    select(species, PSI_bin, bin_mean, sp_mean, de_mean, sp_n, de_n, sp_pct, de_pct, pct_bin, diff_NDVI)
+}
+
 plot_F4_NDVI_PSIbin_area_Bar_Diff <- function(
     df,
     out_file = "results_rootzone/main_PSI/F4_NDVI_PSIbin_area_Bar_Diff.png",
     bin_width = 50,
     min_count = 1000,
-    k_left = 6,
-    bs_left = "cs",
+    k_left = 3,                 # fixed default
+    gam_method = "REML",         # fixed default
+    bs_left = "tp",              # NEW: avoid undefined object in smooth
     width = 12,
     height = 13,
     dpi = 300,
@@ -1069,88 +1164,80 @@ plot_F4_NDVI_PSIbin_area_Bar_Diff <- function(
   d_sp <- d_all %>% filter(area == "species")
   d_de <- d_all %>% filter(area == "Germany")
   
-  # Define specific colors and shapes for the legend including Germany
-  # We use a trick: named vectors for the legend keys
-  legend_cols <- c(sp_cols, "Germany" = germany_grey)
-  legend_fills <- c(sp_cols, "Germany" = "grey70")
-  legend_shapes <- c(sp_shapes, "Germany" = 32) # 32 is empty/no shape for Germany line
-  
-  # --- Inside plot_F4_NDVI_PSIbin_area_Bar_Diff ---
+  legend_cols   <- c(sp_cols, "Germany" = germany_grey)
+  legend_fills  <- c(sp_cols, "Germany" = "grey70")
+  legend_shapes <- c(sp_shapes, "Germany" = 32)
   
   p_left <- ggplot(d_sp, aes(bin_mean, avg_value)) +
-    # --- Germany: Points, Ribbon, Line ---
-    geom_point(data = d_de, aes(size = percentage), colour = germany_grey, alpha = 0.2, show.legend = FALSE) +
-    
-    # 1. Germany Smooth: Explicitly map color and fill to "Germany"
+    # --- Germany: Points + Smooth with CI (REML, k=3) ---
+    geom_point(
+      data = d_de,
+      aes(size = percentage),
+      colour = germany_grey,
+      alpha = 0.2,
+      show.legend = FALSE
+    ) +
     geom_smooth(
-      data = d_de, 
-      aes(x = bin_mean, y = avg_value, group = species, colour = "Germany", fill = "Germany"),
-      method = "gam", 
-      formula = y ~ s(x, k = k_left, bs = bs_left),
-      se = TRUE,        # This ensures the Germany confidence band is drawn
-      alpha = 0.2, 
+      data = d_de,
+      aes(x = bin_mean, y = avg_value, colour = "Germany", fill = "Germany"),
+      method = "gam",
+      formula = y ~ s(x, k = k_left),
+      method.args = list(method = gam_method),
+      se = TRUE,
+      alpha = 0.2,
       linewidth = 1
     ) +
     
-    # --- Species: Points, Ribbon, Line ---
+    # --- Species: Points + Smooth with CI (REML, k=3) ---
     geom_point(aes(colour = species, shape = species, size = percentage), alpha = 0.4) +
-    
-    # 2. Species Smooth: Mapping fill ensures ribbons are drawn for all 4 species
     geom_smooth(
-      aes(colour = species, fill = species, group = species),
-      method = "gam", 
+      aes(colour = species, fill = species),
+      method = "gam",
       formula = y ~ s(x, k = k_left, bs = bs_left),
-      se = TRUE,        # This ensures species confidence bands are drawn
-      alpha = 0.25, 
+      method.args = list(method = gam_method),
+      se = TRUE,
+      alpha = 0.25,
       linewidth = 1.2
     ) +
     
     facet_wrap(~ species, nrow = 2) +
-    
-    # Scale configuration
     scale_colour_manual(values = legend_cols, name = "") +
     scale_fill_manual(values = legend_fills, name = "") +
     scale_shape_manual(values = legend_shapes, name = "") +
     scale_size_continuous(range = c(1, 8), labels = percent_format(accuracy = 1), name = "") +
-    
     labs(x = "soil water potential (kPa)", y = "NDVI quantiles (rank)", title = "(a)") +
-    
     base_theme +
     guides(
-      # Legend 1: Percentage (Grey dots only)
       size = guide_legend(
         order = 1,
         override.aes = list(
-          shape = 16, 
-          colour = "grey70", 
+          shape = 16,
+          colour = "grey80",
           alpha = 1,
-          fill = NA, 
+          fill = NA,
           linewidth = 0
         )
       ),
-      # Legend 2: Species + Germany (Force BOTH Line and Ribbon Box)
       colour = guide_legend(
         order = 2,
         override.aes = list(
           linewidth = 1,
           alpha = 0.4,
-          # This is the critical part: mapping the background fill for all 5 entries
-          fill = legend_fills  
+          fill = legend_fills
         )
       ),
-      # Merging shape and fill into the color guide
       shape = "none",
       fill = "none"
     ) +
     theme(
       plot.title.position = "plot",
-      plot.title = element_text(size = 18, hjust = 0.1, vjust = 1),
+      plot.title = element_text(size = 18, hjust = 0.5, vjust = 1),
       plot.margin = margin(t = 5, r = 5, b = 5, l = 5),
       legend.position = "bottom",
       legend.box = "horizontal"
     )
   
-  # --- Bar Logic (Identical to your provided snippet) ---
+  # --- Bar Logic ---
   df_diff <- NDVI_diff_species_minus_Germany_PSIbin(df, bin_width, min_count) %>%
     mutate(species = factor(species, levels = sp_levels))
   
@@ -1161,37 +1248,51 @@ plot_F4_NDVI_PSIbin_area_Bar_Diff <- function(
       mean_weighted   = weighted.mean(diff_NDVI, w = pct_bin, na.rm = TRUE),
       .groups = "drop"
     ) %>%
-    pivot_longer(cols = c(mean_weighted, mean_unweighted), names_to = "type", values_to = "value") %>%
-    mutate(type = recode(type, mean_weighted = "Weighted (by min area support)", mean_unweighted = "Unweighted"))
+    pivot_longer(
+      cols = c(mean_weighted, mean_unweighted),
+      names_to = "type",
+      values_to = "value"
+    ) %>%
+    mutate(type = recode(type,
+                         mean_weighted = "Weighted (by min area support)",
+                         mean_unweighted = "Unweighted"
+    ))
   
-  p_right_top <- ggplot(df_bar %>% filter(type == "Weighted (by min area support)"), aes(x = species, y = value, fill = species)) +
+  p_right_top <- ggplot(
+    df_bar %>% filter(type == "Weighted (by min area support)"),
+    aes(x = species, y = value, fill = species)
+  ) +
     geom_hline(yintercept = 0, linewidth = 0.6, linetype = "dashed", colour = "grey40") +
-    geom_col(width = 0.7) + scale_fill_manual(values = sp_cols, guide = "none") +
-    labs(x = "", y = expression(Delta[paste("  ", NDVI)]), title = "(b) weighted mean") + base_theme +
+    geom_col(width = 0.7) +
+    scale_fill_manual(values = sp_cols, guide = "none") +
+    labs(x = "", y = expression(Delta[paste("  ", NDVI, " ", quantiles, " ", (rank))]), title = "(b) weighted mean") +
+    base_theme +
     theme(
       plot.title.position = "plot",
       plot.title = element_text(size = 18, hjust = 0.5, vjust = 1),
       plot.margin = margin(t = 5, r = 5, b = 5, l = 5)
     )
   
-  p_right_bottom <- ggplot(df_bar %>% filter(type == "Unweighted"), aes(x = species, y = value, fill = species)) +
+  p_right_bottom <- ggplot(
+    df_bar %>% filter(type == "Unweighted"),
+    aes(x = species, y = value, fill = species)
+  ) +
     geom_hline(yintercept = 0, linewidth = 0.6, linetype = "dashed", colour = "grey40") +
-    geom_col(width = 0.7) + scale_fill_manual(values = sp_cols, guide = "none") +
-    labs(x = "", y = expression(Delta[paste("  ", NDVI)]), title = "(c) unweighted mean") + base_theme +
+    geom_col(width = 0.7) +
+    scale_fill_manual(values = sp_cols, guide = "none") +
+    labs(x = "", y = expression(Delta[paste("  ", NDVI, " ", quantiles, " ", (rank))]), title = "(c) unweighted mean") +
+    base_theme +
     theme(
       plot.title.position = "plot",
       plot.title = element_text(size = 18, hjust = 0.5, vjust = 1),
       plot.margin = margin(t = 5, r = 5, b = 5, l = 5)
     )
   
-  # Combine: (a) on top, (b) and (c) in a third row underneath
-  p_bottom <- (p_right_top | p_right_bottom) +
-    plot_layout(widths = c(1, 1))
+  p_bottom <- (p_right_top | p_right_bottom) + plot_layout(widths = c(1, 1))
   
   p <- (p_left / p_bottom) +
     plot_layout(heights = c(2.2, 1), guides = "collect") &
     theme(legend.position = "bottom", legend.box = "horizontal")
-  
   
   dir.create(dirname(out_file), recursive = TRUE, showWarnings = FALSE)
   ggsave(out_file, p, width = width, height = height, dpi = dpi, bg = "white")
